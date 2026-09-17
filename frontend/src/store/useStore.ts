@@ -51,6 +51,7 @@ interface State {
   triggerIncident: (title?: string, severity?: string) => Promise<void>;
   resolveIncident: (id: string) => Promise<void>;
   decideApproval: (id: string, approved: boolean) => Promise<void>;
+  retryTask: (taskId: string) => Promise<void>;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   sendAgentInstruction: (agentId: string, instruction: string) => void;
@@ -330,6 +331,51 @@ export const useStore = create<State>((set, get) => ({
       set({ approvals: appr, activeApprovalModal: null });
     } catch (e) {
       console.error('Error deciding approval:', e);
+    }
+  },
+
+  retryTask: async (taskId: string) => {
+    const task = get().tasks[taskId];
+    if (!task) return;
+
+    // Optimistically update the task state to PENDING and clear failures
+    set((state) => ({
+      tasks: {
+        ...state.tasks,
+        [taskId]: {
+          ...task,
+          status: 'PENDING',
+          progress: 0,
+          errorDetails: undefined,
+          assignedTo: undefined,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      events: [
+        {
+          id: `evt-${Date.now()}`,
+          type: 'task.retried',
+          source: 'Human Operator',
+          message: `Initiating retry for milestone: "${task.title}"`,
+          timestamp: new Date().toISOString(),
+        },
+        ...state.events,
+      ],
+    }));
+
+    try {
+      let res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/retry`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        // Retry with relative path in case proxied through nginx
+        res = await fetch(`/api/tasks/${taskId}/retry`, { method: 'POST' });
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to retry task: ${res.statusText}`);
+      }
+    } catch (e) {
+      console.error('Error retrying task:', e);
     }
   },
 

@@ -4,12 +4,17 @@ info:
   version: 1.0.0
   description: |
     Production-grade OpenAPI 3.0 specification for AgentForge enterprise multi-tenancy,
-    RBAC (Roles & Permissions), API Key lifecycle management, and comprehensive Audit Logs.
+    RBAC (Roles & Permissions), API Key lifecycle management, comprehensive Audit Logs,
+    and Stripe Payment Gateway integration (Payment Intents, Checkout Sessions, Webhooks).
 servers:
   - url: https://api.agentforge.ai/v1
     description: Production Cluster
   - url: http://localhost:8080/v1
     description: Local Development Server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
 
 paths:
   /organizations:
@@ -155,7 +160,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: List of API keys (secrets omitted).
+          description: List of API keys for the organization.
           content:
             application/json:
               schema:
@@ -163,8 +168,8 @@ paths:
                 items:
                   $ref: '#/components/schemas/ApiKey'
     post:
-      summary: Create API Key
-      description: Generates a new API key. The raw secret is returned ONLY upon creation.
+      summary: Issue API Key
+      description: Generates a new cryptographically secure API key. The raw secret is returned only once.
       operationId: createApiKey
       tags:
         - API Keys
@@ -183,7 +188,7 @@ paths:
               $ref: '#/components/schemas/CreateApiKeyRequest'
       responses:
         '201':
-          description: API key generated successfully. Returns the raw secret.
+          description: API key successfully issued.
           content:
             application/json:
               schema:
@@ -211,17 +216,20 @@ paths:
       responses:
         '204':
           description: API key successfully revoked.
+        '404':
+          $ref: '#/components/responses/NotFound'
 
-  /audit-logs:
+  /organizations/{orgId}/audit-logs:
     get:
       summary: Query Audit Logs
-      description: Retrieve audit logs with filtering by organization, actor, action, and time range.
-      operationId: queryAuditLogs
+      description: Retrieve immutable audit logs for compliance and enterprise tracking.
+      operationId: listAuditLogs
       tags:
         - Audit Logs
       parameters:
-        - name: organization_id
-          in: query
+        - name: orgId
+          in: path
+          required: true
           schema:
             type: string
             format: uuid
@@ -231,10 +239,6 @@ paths:
             type: string
             format: uuid
         - name: action
-          in: query
-          schema:
-            type: string
-        - name: resource_type
           in: query
           schema:
             type: string
@@ -260,7 +264,7 @@ paths:
             default: 0
       responses:
         '200':
-          description: Filtered audit logs.
+          description: Paginated audit log records.
           content:
             application/json:
               schema:
@@ -273,10 +277,156 @@ paths:
                   total:
                     type: integer
 
+  # =====================================================================
+  # PAYMENT GATEWAY ENDPOINTS (Stripe Integration)
+  # =====================================================================
+
+  /organizations/{orgId}/payments/payment-intents:
+    post:
+      summary: Create Payment Intent
+      description: |
+        Creates a Stripe Payment Intent for custom payment flows (e.g. Card, US Bank Account).
+        Supports Idempotency Key header for safe retry execution.
+      operationId: createPaymentIntent
+      tags:
+        - Payments
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Unique client-generated key to ensure idempotent request processing (UUID or unique string).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentIntentRequest'
+      responses:
+        '201':
+          description: Payment Intent successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Unauthorized / Invalid API Key.
+
+  /organizations/{orgId}/payments/checkout-sessions:
+    post:
+      summary: Create Checkout Session
+      description: |
+        Creates a Stripe Checkout Session for hosted payment pages (one-time or recurring subscriptions).
+        Supports Idempotency Key header for safe retry execution.
+      operationId: createCheckoutSession
+      tags:
+        - Payments
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Unique client-generated key for idempotent request handling.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutSessionRequest'
+      responses:
+        '201':
+          description: Checkout Session successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /webhooks/stripe:
+    post:
+      summary: Stripe Webhook Receiver
+      description: |
+        Receives asynchronous event notifications from Stripe.
+        Requires valid Stripe-Signature header for HMAC SHA-256 webhook signature verification.
+        Guarantees idempotent event processing via the stripe_webhook_events event ledger.
+      operationId: handleStripeWebhook
+      tags:
+        - Webhooks
+      security: [] # Webhooks use Stripe-Signature HMAC validation instead of Bearer/ApiKey
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          description: HMAC SHA-256 signature generated by Stripe using webhook signing secret.
+          schema:
+            type: string
+            example: "t=1680000000,v1=abcdef0123456789..."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw Stripe Event JSON payload.
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook received and successfully processed (or idempotent duplicate skipped).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+                  event_id:
+                    type: string
+                    example: "evt_3MowXYZ123456789"
+        '400':
+          description: Invalid webhook payload or missing Stripe-Signature header.
+        '401':
+          description: Webhook signature verification failed (HMAC mismatch).
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authenticated user sessions.
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Enterprise API key for programmatic access.
+
   schemas:
     Organization:
       type: object
+      required:
+        - id
+        - name
+        - slug
+        - tier
+        - created_at
       properties:
         id:
           type: string
@@ -287,15 +437,8 @@ components:
           type: string
         tier:
           type: string
-        settings:
-          type: object
-          additionalProperties: true
-        is_active:
-          type: boolean
+          enum: [free, startup, enterprise]
         created_at:
-          type: string
-          format: date-time
-        updated_at:
           type: string
           format: date-time
 
@@ -311,78 +454,63 @@ components:
           type: string
         tier:
           type: string
-          default: standard
-        settings:
-          type: object
+          enum: [free, startup, enterprise]
+          default: free
 
     Role:
       type: object
+      required:
+        - id
+        - name
+        - permissions
       properties:
         id:
-          type: string
-          format: uuid
-        organization_id:
           type: string
           format: uuid
         name:
           type: string
         description:
           type: string
-        is_system:
-          type: boolean
         permissions:
           type: array
           items:
-            $ref: '#/components/schemas/Permission'
-
-    Permission:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        resource:
-          type: string
-        action:
-          type: string
-        description:
-          type: string
+            type: string
 
     CreateRoleRequest:
       type: object
       required:
         - name
-        - permission_ids
+        - permissions
       properties:
         name:
           type: string
         description:
           type: string
-        permission_ids:
+        permissions:
           type: array
           items:
             type: string
-            format: uuid
 
     ApiKey:
       type: object
+      required:
+        - id
+        - name
+        - key_prefix
+        - created_at
       properties:
         id:
-          type: string
-          format: uuid
-        organization_id:
           type: string
           format: uuid
         name:
           type: string
         key_prefix:
           type: string
+          example: "af_live_9x8d7"
         scopes:
           type: array
           items:
             type: string
-        is_active:
-          type: boolean
         last_used_at:
           type: string
           format: date-time
@@ -452,6 +580,152 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    CreatePaymentIntentRequest:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          description: Amount in smallest currency unit (e.g. cents for USD, i.e. 1000 = $10.00).
+          example: 2500
+        currency:
+          type: string
+          description: Three-letter ISO currency code.
+          default: usd
+          example: "usd"
+        payment_method_types:
+          type: array
+          items:
+            type: string
+          example: ["card"]
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Key-value metadata attached to Stripe payment intent.
+
+    PaymentIntentResponse:
+      type: object
+      required:
+        - id
+        - client_secret
+        - status
+        - amount
+        - currency
+      properties:
+        id:
+          type: string
+          description: Stripe Payment Intent ID (e.g. pi_3Mow...)
+          example: "pi_3MowXYZ123456789"
+        client_secret:
+          type: string
+          description: Client secret required by Stripe.js to confirm payment on frontend.
+          example: "pi_3MowXYZ123456789_secret_abc123"
+        status:
+          type: string
+          description: Current payment intent status (e.g. requires_payment_method, succeeded).
+          example: "requires_payment_method"
+        amount:
+          type: integer
+          example: 2500
+        currency:
+          type: string
+          example: "usd"
+        created_at:
+          type: string
+          format: date-time
+
+    CreateCheckoutSessionRequest:
+      type: object
+      required:
+        - success_url
+        - cancel_url
+        - line_items
+      properties:
+        mode:
+          type: string
+          enum: [payment, subscription, setup]
+          default: payment
+          description: Checkout session mode.
+        success_url:
+          type: string
+          format: uri
+          description: URL where Stripe redirects upon successful payment.
+          example: "https://app.agentforge.ai/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+        cancel_url:
+          type: string
+          format: uri
+          description: URL where Stripe redirects if user cancels checkout.
+          example: "https://app.agentforge.ai/checkout/cancel"
+        line_items:
+          type: array
+          items:
+            type: object
+            required:
+              - price_data
+              - quantity
+            properties:
+              price_data:
+                type: object
+                required:
+                  - currency
+                  - unit_amount
+                  - product_data
+                properties:
+                  currency:
+                    type: string
+                    example: "usd"
+                  unit_amount:
+                    type: integer
+                    example: 4900
+                  product_data:
+                    type: object
+                    required:
+                      - name
+                    properties:
+                      name:
+                        type: string
+                        example: "AgentForge Pro Subscription"
+                      description:
+                        type: string
+                        example: "Monthly access to advanced autonomous agents."
+              quantity:
+                type: integer
+                example: 1
+        metadata:
+          type: object
+          additionalProperties: true
+
+    CheckoutSessionResponse:
+      type: object
+      required:
+        - id
+        - url
+        - status
+        - payment_status
+      properties:
+        id:
+          type: string
+          description: Stripe Checkout Session ID (e.g. cs_live_...)
+          example: "cs_live_b1XYZ..."
+        url:
+          type: string
+          format: uri
+          description: Hosted Stripe Checkout URL to redirect the user to.
+          example: "https://checkout.stripe.com/c/pay/cs_live_..."
+        status:
+          type: string
+          enum: [open, complete, expired]
+          example: "open"
+        payment_status:
+          type: string
+          enum: [paid, unpaid, no_payment_required]
+          example: "unpaid"
         created_at:
           type: string
           format: date-time

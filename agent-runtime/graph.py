@@ -149,7 +149,7 @@ NON-NEGOTIABLE ENTERPRISE GUARDRAILS:
         google_api_key=gemini_api_key if gemini_api_key else None,
         temperature=0.2,
         streaming=True,
-        max_retries=6,
+        max_retries=12,
     ).bind_tools(agent_tools)
 
     def agent_node(state: AgentWorkflowState):

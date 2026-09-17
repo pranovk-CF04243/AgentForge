@@ -812,6 +812,16 @@ func (o *Orchestrator) RetryTask(taskID string) error {
 
 	task, ok := o.tasks[taskID]
 	if !ok {
+		if o.db != nil {
+			var dbTask Task
+			if err := o.db.First(&dbTask, "id = ?", taskID).Error; err == nil {
+				o.tasks[taskID] = &dbTask
+				task = &dbTask
+				ok = true
+			}
+		}
+	}
+	if !ok {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 

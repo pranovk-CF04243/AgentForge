@@ -16,13 +16,14 @@ export const TaskBoard: React.FC = () => {
   const tasks = useStore((state) => state.tasks);
   const agents = useStore((state) => state.agents);
   const selectAgent = useStore((state) => state.selectAgent);
+  const retryTask = useStore((state) => state.retryTask);
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
 
   const handleRetryTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setRetryingTaskId(taskId);
     try {
-      await fetch(`/api/tasks/${taskId}/retry`, { method: 'POST' });
+      await retryTask(taskId);
     } catch (err) {
       console.error('Failed to retry task:', err);
     } finally {

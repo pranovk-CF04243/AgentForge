@@ -44,9 +44,20 @@ services:
       - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
     ports:
       - "19092:19092"
-      - "9644:9644" # Admin API
+      - "9644:9644"
 
-  # 4. Go Core Orchestrator & WebSocket Engine
+  # 4. Stripe CLI Local Webhook Forwarder & Mock Engine
+  stripe-cli:
+    image: stripe/stripe-cli:latest
+    container_name: agentforge-stripe-cli
+    restart: unless-stopped
+    command: ["listen", "--forward-to", "http://backend:8080/api/v1/billing/webhook"]
+    environment:
+      - STRIPE_API_KEY=${STRIPE_SECRET_KEY}
+    depends_on:
+      - backend
+
+  # 5. Go Core Orchestrator & WebSocket Engine
   backend:
     build:
       context: ./backend
@@ -71,7 +82,7 @@ services:
       redpanda:
         condition: service_started
 
-  # 5. Python Agent Runtime (with LangGraph & LangSmith)
+  # 6. Python Agent Runtime (with LangGraph & LangSmith)
   agent-runtime:
     build:
       context: ./agent-runtime
@@ -98,7 +109,7 @@ services:
     depends_on:
       - backend
 
-  # 6. React + Three.js 3D Command Center Frontend
+  # 7. React + Three.js 3D Command Center Frontend
   frontend:
     build:
       context: ./frontend
