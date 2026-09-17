@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.agentforge.ai/audit.events.v1.json",
+  "title": "AuditEventsV1",
+  "description": "Kafka event schema for enterprise audit logs under topic 'audit.events.v1'",
+  "type": "object",
+  "required": [
+    "event_id",
+    "timestamp",
+    "specversion",
+    "source",
+    "type",
+    "organization_id",
+    "actor",
+    "action",
+    "resource",
+    "status"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique UUID for the audit event instance."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the event occurred."
+    },
+    "specversion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "CloudEvents / Event specification version."
+    },
+    "source": {
+      "type": "string",
+      "description": "Service or subsystem originating the event (e.g., 'agentforge-control-plane')."
+    },
+    "type": {
+      "type": "string",
+      "description": "Fully qualified event type (e.g., 'ai.agentforge.audit.organization.created')."
+    },
+    "organization_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Tenant organization UUID."
+    },
+    "actor": {
+      "type": "object",
+      "required": ["actor_id", "actor_type", "actor_email"],
+      "properties": {
+        "actor_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        },
+        "actor_type": {
+          "type": "string",
+          "enum": ["user", "api_key", "system"]
+        },
+        "actor_email": {
+          "type": ["string", "null"],
+          "format": "email"
+        }
+      }
+    },
+    "action": {
+      "type": "string",
+      "description": "Action performed (e.g., 'organization.created', 'api_key.revoked')."
+    },
+    "resource": {
+      "type": "object",
+      "required": ["resource_type", "resource_id"],
+      "properties": {
+        "resource_type": {
+          "type": "string",
+          "description": "Type of resource affected (e.g., 'organization', 'api_key', 'agent')."
+        },
+        "resource_id": {
+          "type": "string",
+          "description": "Identifier of the affected resource."
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "ip_address": {
+          "type": ["string", "null"]
+        },
+        "user_agent": {
+          "type": ["string", "null"]
+        },
+        "request_id": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "failure", "denied"],
+      "description": "Outcome of the operation."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Arbitrary context payload or diff metadata."
+    }
+  }
+}

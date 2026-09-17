@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # 1. Relational Database & Vector Store
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentforge
+      POSTGRES_PASSWORD: agentforge_secret
+      POSTGRES_DB: agentforge_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentforge -d agentforge_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. In-Memory Cache & Pub/Sub
+  redis:
+    image: redis:7-alpine
+    container_name: agentforge-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # 3. High-Performance Event Streaming (Kafka compatible)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
+    container_name: agentforge-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644" # Admin API
+
+  # 4. Go Core Orchestrator & WebSocket Engine
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agentforge-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://agentforge:agentforge_secret@postgres:5432/agentforge_db?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      KAFKA_BROKERS: "redpanda:9092"
+      AGENT_RUNTIME_URL: "http://agent-runtime:8000"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      redpanda:
+        condition: service_started
+
+  # 5. Python Agent Runtime (with LangGraph & LangSmith)
+  agent-runtime:
+    build:
+      context: ./agent-runtime
+      dockerfile: Dockerfile
+    container_name: agentforge-agent-runtime
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      BACKEND_URL: "http://backend:8080"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+      GITHUB_APP_ID: "${GITHUB_APP_ID}"
+      GITHUB_APP_PRIVATE_KEY: "${GITHUB_APP_PRIVATE_KEY}"
+      GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET}"
+      LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-false}"
+      LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
+      LANGCHAIN_API_KEY: "${LANGCHAIN_API_KEY:-}"
+      LANGCHAIN_PROJECT: "${LANGCHAIN_PROJECT:-AgentForge}"
+    volumes:
+      - .:/workspace
+    depends_on:
+      - backend
+
+  # 6. React + Three.js 3D Command Center Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: agentforge-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_BACKEND_URL: "http://localhost:8080"
+      VITE_WS_URL: "ws://localhost:8080/ws"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

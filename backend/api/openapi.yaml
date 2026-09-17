@@ -1,0 +1,492 @@
+openapi: 3.0.3
+info:
+  title: AgentForge Enterprise Control Plane API
+  version: 1.0.0
+  description: |
+    Production-grade OpenAPI 3.0 specification for AgentForge enterprise multi-tenancy,
+    RBAC (Roles & Permissions), API Key lifecycle management, and comprehensive Audit Logs.
+servers:
+  - url: https://api.agentforge.ai/v1
+    description: Production Cluster
+  - url: http://localhost:8080/v1
+    description: Local Development Server
+
+paths:
+  /organizations:
+    post:
+      summary: Create Organization
+      description: Provisions a new enterprise organization tenant.
+      operationId: createOrganization
+      tags:
+        - Organizations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: Organization successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    get:
+      summary: List Organizations
+      description: Retrieve list of organizations (Admin only).
+      operationId: listOrganizations
+      tags:
+        - Organizations
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of organizations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+                  total:
+                    type: integer
+
+  /organizations/{orgId}:
+    get:
+      summary: Get Organization by ID
+      operationId: getOrganization
+      tags:
+        - Organizations
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Organization details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /organizations/{orgId}/roles:
+    get:
+      summary: List Roles for Organization
+      operationId: listOrganizationRoles
+      tags:
+        - RBAC
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of roles with associated permissions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+    post:
+      summary: Create Role
+      operationId: createRole
+      tags:
+        - RBAC
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          description: Role created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+
+  /organizations/{orgId}/api-keys:
+    get:
+      summary: List API Keys
+      operationId: listApiKeys
+      tags:
+        - API Keys
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of API keys (secrets omitted).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKey'
+    post:
+      summary: Create API Key
+      description: Generates a new API key. The raw secret is returned ONLY upon creation.
+      operationId: createApiKey
+      tags:
+        - API Keys
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+      responses:
+        '201':
+          description: API key generated successfully. Returns the raw secret.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreationResponse'
+
+  /organizations/{orgId}/api-keys/{keyId}:
+    delete:
+      summary: Revoke API Key
+      operationId: revokeApiKey
+      tags:
+        - API Keys
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: API key successfully revoked.
+
+  /audit-logs:
+    get:
+      summary: Query Audit Logs
+      description: Retrieve audit logs with filtering by organization, actor, action, and time range.
+      operationId: queryAuditLogs
+      tags:
+        - Audit Logs
+      parameters:
+        - name: organization_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Filtered audit logs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  total:
+                    type: integer
+
+components:
+  schemas:
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+        settings:
+          type: object
+          additionalProperties: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateOrganizationRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+          default: standard
+        settings:
+          type: object
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        is_system:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+
+    Permission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        resource:
+          type: string
+        action:
+          type: string
+        description:
+          type: string
+
+    CreateRoleRequest:
+      type: object
+      required:
+        - name
+        - permission_ids
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permission_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        key_prefix:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        last_used_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CreateApiKeyRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    ApiKeyCreationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiKey'
+        - type: object
+          required:
+            - secret_key
+          properties:
+            secret_key:
+              type: string
+              description: Raw secret key. Shown only once upon creation.
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        actor_email:
+          type: string
+        actor_type:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        request_id:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request payload or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource conflict (e.g. duplicate slug or email).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

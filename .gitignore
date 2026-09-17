@@ -1,0 +1,29 @@
+# Binaries and build artifacts
+backend/server
+dist/
+build/
+*.o
+*.a
+*.so
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+
+# Logs & Environment
+*.log
+.env
+.DS_Store
+.idea/
+.vscode/
