@@ -24,6 +24,19 @@ export const CameraController: React.FC = () => {
   const selectedAgentId = useStore((state) => state.selectedAgentId);
   const agents = useStore((state) => state.agents);
 
+  const selectedTaskId = useStore((state) => state.selectedTaskId);
+  const isSpecStudioOpen = useStore((state) => state.isSpecStudioOpen || state.isBRDModalOpen);
+  const isK8sModalOpen = useStore((state) => state.isK8sModalOpen);
+  const isCreateProjectModalOpen = useStore((state) => state.isCreateProjectModalOpen);
+  const isPlanVerificationModalOpen = useStore((state) => state.isPlanVerificationModalOpen);
+  const isModalOpen = Boolean(
+    selectedTaskId ||
+    isSpecStudioOpen ||
+    isK8sModalOpen ||
+    isCreateProjectModalOpen ||
+    isPlanVerificationModalOpen
+  );
+
   const targetLookAt = useRef(new THREE.Vector3(...PRESETS.ALL.target));
   const targetZoom = useRef(PRESETS.ALL.zoom);
   const isTransitioning = useRef(true);
@@ -74,8 +87,8 @@ export const CameraController: React.FC = () => {
       enableRotate={false}
       minZoom={45}
       maxZoom={160}
-      enableZoom={true}
-      enablePan={true}
+      enableZoom={!isModalOpen}
+      enablePan={!isModalOpen}
     />
   );
 };

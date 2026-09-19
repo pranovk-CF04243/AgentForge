@@ -106,8 +106,9 @@ const SingleCollaborationArc: React.FC<{
 export const CollaborationArcs3D: React.FC = () => {
   const agents = useStore((state) => state.agents);
   const tasks = useStore((state) => state.tasks);
+  const selectedProjectId = useStore((state) => state.selectedProjectId);
 
-  // Derive active connections based on tasks or agent activity
+  // Derive active connections based on tasks or agent activity for the selected project
   const activeFlows = useMemo(() => {
     const flows: {
       key: string;
@@ -118,9 +119,9 @@ export const CollaborationArcs3D: React.FC = () => {
       offset: number;
     }[] = [];
 
-    // 1. Task-based explicit dependencies
+    // 1. Task-based explicit dependencies scoped to selected project
     const runningTasks = Object.values(tasks).filter(
-      (t) => t.status === 'RUNNING' || t.status === 'ASSIGNED' || t.status === 'REVIEW'
+      (t) => t.projectId === selectedProjectId && (t.status === 'RUNNING' || t.status === 'ASSIGNED' || t.status === 'REVIEW')
     );
 
     runningTasks.forEach((task, idx) => {
@@ -145,16 +146,17 @@ export const CollaborationArcs3D: React.FC = () => {
       }
     });
 
-    // 2. Active agent state flows
+    // 2. Active agent state flows - only for agents active in the selected project
+    const activeAgentIdsInProject = new Set(
+      runningTasks.map((t) => t.assignedTo).filter(Boolean)
+    );
+
     DEFAULT_FLOWS.forEach((flow, idx) => {
-      const fromAgent = agents[flow.fromId];
-      const toAgent = agents[flow.toId];
+      const fromActive = activeAgentIdsInProject.has(flow.fromId);
+      const toActive = activeAgentIdsInProject.has(flow.toId);
 
-      const fromActive = fromAgent && fromAgent.state !== 'IDLE';
-      const toActive = toAgent && toAgent.state !== 'IDLE';
-
-      // If either agent is active, show the collaborative conduit
-      if (fromActive || toActive) {
+      // Only show collaborative conduit if agents are active on this project
+      if (fromActive && toActive) {
         const seatFrom = AGENT_MODERN_SEATS[flow.fromId];
         const seatTo = AGENT_MODERN_SEATS[flow.toId];
         if (seatFrom && seatTo) {
@@ -171,7 +173,7 @@ export const CollaborationArcs3D: React.FC = () => {
     });
 
     return flows;
-  }, [agents, tasks]);
+  }, [agents, tasks, selectedProjectId]);
 
   return (
     <group>

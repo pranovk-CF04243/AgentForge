@@ -72,6 +72,7 @@ services:
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "redpanda:9092"
       AGENT_RUNTIME_URL: "http://agent-runtime:8000"
+      INTERNAL_WEBHOOK_SECRET: "${INTERNAL_WEBHOOK_SECRET:-agentforge-internal-dev-secret}"
     ports:
       - "8080:8080"
     depends_on:
@@ -95,8 +96,11 @@ services:
       - .env
     environment:
       BACKEND_URL: "http://backend:8080"
+      INTERNAL_WEBHOOK_SECRET: "${INTERNAL_WEBHOOK_SECRET:-agentforge-internal-dev-secret}"
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
-      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.6-flash}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      DEFAULT_GITHUB_REPO: "${DEFAULT_GITHUB_REPO:-pranovk-CF04243/AgentForge}"
       GITHUB_APP_ID: "${GITHUB_APP_ID}"
       GITHUB_APP_PRIVATE_KEY: "${GITHUB_APP_PRIVATE_KEY}"
       GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET}"
@@ -104,8 +108,16 @@ services:
       LANGCHAIN_ENDPOINT: "${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}"
       LANGCHAIN_API_KEY: "${LANGCHAIN_API_KEY:-}"
       LANGCHAIN_PROJECT: "${LANGCHAIN_PROJECT:-AgentForge}"
+      KUBECONFIG: "${KUBECONFIG:-/root/.kube/config}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      VERTEX_AI_PROJECT: "${VERTEX_AI_PROJECT:-}"
+      VERTEX_AI_LOCATION: "${VERTEX_AI_LOCATION:-us-east5}"
     volumes:
-      - .:/workspace
+      - ./workspaces:/workspaces
+      - ./agent-runtime:/app
+      - ${HOME}/.kube:/root/.kube:ro
+      - k3s_output:/k3s:ro
+
     depends_on:
       - backend
 
@@ -124,6 +136,31 @@ services:
     depends_on:
       - backend
 
+  # 8. Embedded CNCF Kubernetes Cluster (K3s)
+  k3s:
+    image: rancher/k3s:v1.31.0-k3s1
+    container_name: agentforge-k3s
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+    command:
+      - server
+      - --disable=traefik
+      - --disable=servicelb
+      - --tls-san=k3s
+      - --tls-san=agentforge-k3s
+      - --tls-san=localhost
+    volumes:
+      - k3s_data:/var/lib/rancher/k3s
+      - k3s_output:/output
+    ports:
+      - "6443:6443"
+      - "30000-30010:30000-30010"
+
 volumes:
   postgres_data:
   redis_data:
+  k3s_data:
+  k3s_output:

@@ -1,12 +1,14 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
 import { ShieldCheck, XCircle, CheckCircle, AlertTriangle, GitPullRequest } from 'lucide-react';
+import { usePermissions } from '../../hooks/usePermissions';
 
 export const ApprovalModal: React.FC = () => {
   const activeApprovalModal = useStore((state) => state.activeApprovalModal);
   const decideApproval = useStore((state) => state.decideApproval);
   const agents = useStore((state) => state.agents);
   const tasks = useStore((state) => state.tasks);
+  const perms = usePermissions();
 
   if (!activeApprovalModal) return null;
 
@@ -89,20 +91,29 @@ export const ApprovalModal: React.FC = () => {
 
         {/* Modal Footer Actions */}
         <div className="p-4 bg-slate-50 dark:bg-cyber-800/50 border-t border-slate-200 dark:border-cyber-700/60 flex items-center justify-end gap-3">
-          <button
-            onClick={() => decideApproval(activeApprovalModal.id, false)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-100 hover:bg-rose-200 dark:bg-rose-950 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 text-xs font-mono font-bold transition-colors cursor-pointer"
-          >
-            <XCircle className="w-4 h-4" />
-            <span>Reject Action</span>
-          </button>
-          <button
-            onClick={() => decideApproval(activeApprovalModal.id, true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white dark:text-slate-950 text-xs font-mono font-bold transition-colors shadow-lg shadow-emerald-600/20 cursor-pointer"
-          >
-            <CheckCircle className="w-4 h-4" />
-            <span>Approve & Authorize</span>
-          </button>
+          {perms.canApproveTask ? (
+            <>
+              <button
+                onClick={() => decideApproval(activeApprovalModal.id, false)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-100 hover:bg-rose-200 dark:bg-rose-950 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 text-xs font-mono font-bold transition-colors cursor-pointer"
+              >
+                <XCircle className="w-4 h-4" />
+                <span>Reject Action</span>
+              </button>
+              <button
+                onClick={() => decideApproval(activeApprovalModal.id, true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white dark:text-slate-950 text-xs font-mono font-bold transition-colors shadow-lg shadow-emerald-600/20 cursor-pointer"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>Approve & Authorize</span>
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+              <ShieldCheck className="w-4 h-4 text-amber-500" />
+              <span>Approval restricted: requires Admin or Owner role.</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

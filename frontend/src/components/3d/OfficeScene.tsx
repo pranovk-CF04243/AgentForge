@@ -16,6 +16,19 @@ export const OfficeScene: React.FC = () => {
   const theme = useStore((state) => state.theme);
   const isLight = theme === 'light';
 
+  const selectedTaskId = useStore((state) => state.selectedTaskId);
+  const isSpecStudioOpen = useStore((state) => state.isSpecStudioOpen || state.isBRDModalOpen);
+  const isK8sModalOpen = useStore((state) => state.isK8sModalOpen);
+  const isCreateProjectModalOpen = useStore((state) => state.isCreateProjectModalOpen);
+  const isPlanVerificationModalOpen = useStore((state) => state.isPlanVerificationModalOpen);
+  const isModalOpen = Boolean(
+    selectedTaskId ||
+    isSpecStudioOpen ||
+    isK8sModalOpen ||
+    isCreateProjectModalOpen ||
+    isPlanVerificationModalOpen
+  );
+
   const presets: { id: CameraPreset; label: string; icon: React.ReactNode }[] = [
     { id: 'ALL', label: 'Campus Overview', icon: <Eye className="w-3.5 h-3.5" /> },
     { id: 'ARCHITECTURE', label: 'Executive Boardroom', icon: <Layers className="w-3.5 h-3.5" /> },
@@ -28,12 +41,13 @@ export const OfficeScene: React.FC = () => {
   return (
     <div className="relative w-full h-full bg-slate-100 dark:bg-[#0a0d18] select-none transition-colors duration-200">
       <Canvas
+        frameloop={isModalOpen ? 'never' : 'always'}
         orthographic
         shadows
         camera={{ position: [22, 22, 22], zoom: 70, near: -100, far: 500 }}
-        onClick={() => selectAgent(null)}
-        gl={{ antialias: true, alpha: false }}
-        style={{ width: '100%', height: '100%' }}
+        onPointerMissed={() => selectAgent(null)}
+        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+        style={{ width: '100%', height: '100%', pointerEvents: isModalOpen ? 'none' : 'auto' }}
       >
         <color attach="background" args={[isLight ? '#edf2f7' : '#0a0d18']} />
 

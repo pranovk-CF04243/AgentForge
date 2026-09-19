@@ -11,8 +11,10 @@ import {
   Edit3, 
   Rocket, 
   Send,
-  BookOpen
+  BookOpen,
+  Lock
 } from 'lucide-react';
+import { usePermissions } from '../../hooks/usePermissions';
 
 export const PlanVerificationModal: React.FC = () => {
   const isPlanVerificationModalOpen = useStore((state) => state.isPlanVerificationModalOpen);
@@ -24,6 +26,7 @@ export const PlanVerificationModal: React.FC = () => {
   const removeStagedTask = useStore((state) => state.removeStagedTask);
   const replanTasks = useStore((state) => state.replanTasks);
   const launchPlan = useStore((state) => state.launchPlan);
+  const perms = usePermissions();
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [replanPrompt, setReplanPrompt] = useState('');
@@ -273,15 +276,15 @@ export const PlanVerificationModal: React.FC = () => {
                         <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 font-medium">
                           Role: {task.requiredRole}
                         </span>
-                        {task.dependencies.length > 0 && (
+                        {(task.dependencies?.length || 0) > 0 && (
                           <span className="text-slate-500">
-                            Prerequisites: {task.dependencies.join(', ')}
+                            Prerequisites: {(task.dependencies || []).join(', ')}
                           </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                        <span>Tools: {task.tools.slice(0, 3).join(', ')}</span>
+                        <span>Tools: {(task.tools || []).slice(0, 3).join(', ')}</span>
                       </div>
                     </div>
                   </div>
@@ -330,14 +333,21 @@ export const PlanVerificationModal: React.FC = () => {
             >
               Cancel / Back
             </button>
-            <button
-              onClick={handleLaunch}
-              disabled={isLaunching || stagedTasks.length === 0}
-              className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-emerald-600/20 cursor-pointer text-xs"
-            >
-              <Rocket className="w-4 h-4" />
-              <span>{isLaunching ? 'Mobilizing Agents...' : 'Approve & Launch Pipeline'}</span>
-            </button>
+            {perms.canLaunchPlan ? (
+              <button
+                onClick={handleLaunch}
+                disabled={isLaunching || stagedTasks.length === 0}
+                className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-emerald-600/20 cursor-pointer text-xs"
+              >
+                <Rocket className="w-4 h-4" />
+                <span>{isLaunching ? 'Mobilizing Agents...' : 'Approve & Launch Pipeline'}</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-mono">
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+                <span>Launch restricted to Developer, Admin, or Owner</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -104,7 +104,34 @@ const HUMAN_STYLING: Record<string, HumanStyling> = {
 export const Agent3D: React.FC<Agent3DProps> = ({ agent }) => {
   const selectAgent = useStore((state) => state.selectAgent);
   const selectedAgentId = useStore((state) => state.selectedAgentId);
+  const selectedProjectId = useStore((state) => state.selectedProjectId);
+  const tasks = useStore((state) => state.tasks);
+  const projects = useStore((state) => state.projects);
   const isSelected = selectedAgentId === agent.id;
+
+  // Check if this agent is actively executing a task in the currently selected project
+  const currentTaskInSelectedProject = Object.values(tasks).find(
+    (t) => (t.assignedTo === agent.id) &&
+           (t.status === 'RUNNING' || t.status === 'ASSIGNED') &&
+           t.projectId === selectedProjectId
+  );
+
+  // Check if agent is currently occupied on a task in a different project
+  const currentTaskInOtherProject = !currentTaskInSelectedProject ? Object.values(tasks).find(
+    (t) => (t.assignedTo === agent.id) &&
+           (t.status === 'RUNNING' || t.status === 'ASSIGNED') &&
+           t.projectId !== selectedProjectId
+  ) : undefined;
+
+  const isWorkingOnSelectedProject = !!currentTaskInSelectedProject;
+  const isWorkingOnOtherProject = !!currentTaskInOtherProject;
+
+  const isSpecStudioOpen = useStore((state) => state.isSpecStudioOpen || state.isBRDModalOpen);
+  const isCreateProjectModalOpen = useStore((state) => state.isCreateProjectModalOpen);
+  const isPlanVerificationModalOpen = useStore((state) => state.isPlanVerificationModalOpen);
+  const activeApprovalModal = useStore((state) => state.activeApprovalModal);
+  const selectedTaskId = useStore((state) => state.selectedTaskId);
+  const isModalActive = isSpecStudioOpen || isCreateProjectModalOpen || isPlanVerificationModalOpen || !!activeApprovalModal || !!selectedTaskId;
 
   const [isHovered, setIsHovered] = useState(false);
   const leftArmRef = useRef<THREE.Group>(null);
@@ -162,17 +189,23 @@ export const Agent3D: React.FC<Agent3DProps> = ({ agent }) => {
         }
       }
     } else {
-      // WORKING_DESK: Hands rest on keyboard, tapping code
+      // WORKING_DESK: Hands rest on keyboard, tapping code only if actively working on this project
       if (leftArmRef.current && rightArmRef.current) {
-        // Alternating fluid keyboard keystrokes
-        const tapLeft = Math.sin(t * 14) > 0 ? 0.03 : 0;
-        const tapRight = Math.cos(t * 14) > 0 ? 0.03 : 0;
-        leftArmRef.current.rotation.x = -0.75 + tapLeft;
-        rightArmRef.current.rotation.x = -0.75 + tapRight;
+        if (isWorkingOnSelectedProject) {
+          // Alternating fluid keyboard keystrokes
+          const tapLeft = Math.sin(t * 14) > 0 ? 0.03 : 0;
+          const tapRight = Math.cos(t * 14) > 0 ? 0.03 : 0;
+          leftArmRef.current.rotation.x = -0.75 + tapLeft;
+          rightArmRef.current.rotation.x = -0.75 + tapRight;
+        } else {
+          // Calm standby resting posture
+          leftArmRef.current.rotation.x = -0.72;
+          rightArmRef.current.rotation.x = -0.72;
+        }
       }
       if (headRef.current) {
-        // Natural subtle gaze across ultrawide monitors
-        headRef.current.rotation.y = Math.sin(t * 0.9) * 0.16;
+        // Natural subtle gaze across monitors
+        headRef.current.rotation.y = Math.sin(t * 0.9) * (isWorkingOnSelectedProject ? 0.16 : 0.08);
         headRef.current.rotation.x = 0.08 + Math.sin(t * 1.6) * 0.03;
       }
     }
@@ -202,6 +235,30 @@ export const Agent3D: React.FC<Agent3DProps> = ({ agent }) => {
         document.body.style.cursor = 'default';
       }}
     >
+      {/* ── 0. RAYCAST CLICK TARGET (Generous hitbox for responsive selection) ── */}
+      <mesh
+        position={[0, 0.9, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectAgent(agent.id);
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+        }}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setIsHovered(true);
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={() => {
+          setIsHovered(false);
+          document.body.style.cursor = 'default';
+        }}
+      >
+        <cylinderGeometry args={[0.55, 0.55, 2.0, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       {/* ── 1. MODERN ERGONOMIC CHAIR (Only when seated) ── */}
       {!seat.isStanding && (
         <group position={[0, 0, 0]}>
@@ -476,8 +533,8 @@ export const Agent3D: React.FC<Agent3DProps> = ({ agent }) => {
         )}
       </group>
 
-      {/* ── Active Task Desk & Keyboard Light Glow (when WORKING) ── */}
-      {agent.state === 'WORKING' && !seat.isStanding && (
+      {/* ── Active Task Desk & Keyboard Light Glow (when WORKING on selected project) ── */}
+      {isWorkingOnSelectedProject && !seat.isStanding && (
         <pointLight
           position={[0, 0.85, -0.42]}
           intensity={1.4}
@@ -487,51 +544,83 @@ export const Agent3D: React.FC<Agent3DProps> = ({ agent }) => {
       )}
 
       {/* ── 3. CLEAN UNCONGESTED ENTERPRISE BADGE ──────────────────── */}
-      <Html position={[0, seat.isStanding ? 1.55 : 1.45, 0]} center className="pointer-events-none">
-        {showDetail ? (
-          <div
-            className="flex flex-col items-center select-none animate-in fade-in zoom-in-95 duration-150"
-            style={{
-              filter: isSelected ? 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.9))' : 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))',
-            }}
-          >
-            <div className="flex items-center gap-2 px-3 py-1 bg-[#0f172a]/95 backdrop-blur-md border border-slate-700 rounded-full shadow-2xl whitespace-nowrap">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  agent.state === 'WORKING' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'
-                }`}
-              />
-              <span className="text-[11px] font-sans font-semibold text-slate-100">
-                {agent.name.split(' ')[0]}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                ({style.roleLabel})
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700">
-                {style.actionText}
-              </span>
+      {!isModalActive && (
+        <Html position={[0, seat.isStanding ? 1.55 : 1.45, 0]} center zIndexRange={[10, 0]}>
+          {showDetail ? (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                selectAgent(agent.id);
+              }}
+              className="flex flex-col items-center select-none animate-in fade-in zoom-in-95 duration-150 cursor-pointer pointer-events-auto"
+              style={{
+                filter: isSelected ? 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.9))' : 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))',
+              }}
+            >
+              <div className="flex items-center gap-2 px-3 py-1 bg-[#0f172a]/95 backdrop-blur-md border border-slate-700 rounded-full shadow-2xl whitespace-nowrap">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isWorkingOnSelectedProject
+                      ? 'bg-emerald-400 animate-pulse'
+                      : isWorkingOnOtherProject
+                      ? 'bg-amber-400'
+                      : 'bg-blue-400'
+                  }`}
+                />
+                <span className="text-[11px] font-sans font-semibold text-slate-100">
+                  {agent.name.split(' ')[0]}
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  ({style.roleLabel})
+                </span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${
+                  isWorkingOnSelectedProject
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
+                    : isWorkingOnOtherProject
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-800/60'
+                    : 'bg-slate-800 text-cyan-300 border-slate-700'
+                }`}>
+                  {isWorkingOnSelectedProject
+                    ? (currentTaskInSelectedProject?.title?.slice(0, 24) || style.actionText)
+                    : isWorkingOnOtherProject
+                    ? `Occupied in ${projects[currentTaskInOtherProject.projectId]?.name || 'Other Project'}`
+                    : 'Standby / Idle'}
+                </span>
+              </div>
+              <div className="w-2 h-2 bg-[#0f172a] border-b border-r border-slate-700 rotate-45 -mt-1" />
             </div>
-            <div className="w-2 h-2 bg-[#0f172a] border-b border-r border-slate-700 rotate-45 -mt-1" />
-          </div>
-        ) : agent.state === 'WORKING' ? (
-          <div className="flex flex-col items-center select-none animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#0f172a]/92 backdrop-blur-sm border border-emerald-500/50 rounded-full shadow-lg whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-[10px] font-sans font-medium text-slate-200">
-                {agent.name.split(' ')[0]}
-              </span>
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/40">
-                {style.actionText}
-              </span>
+          ) : isWorkingOnSelectedProject ? (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                selectAgent(agent.id);
+              }}
+              className="flex flex-col items-center select-none animate-in fade-in zoom-in-95 duration-200 cursor-pointer pointer-events-auto"
+            >
+              <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#0f172a]/92 backdrop-blur-sm border border-emerald-500/50 rounded-full shadow-lg whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-[10px] font-sans font-medium text-slate-200">
+                  {agent.name.split(' ')[0]}
+                </span>
+                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/40">
+                  {currentTaskInSelectedProject?.title?.slice(0, 24) || style.actionText}
+                </span>
+              </div>
+              <div className="w-1.5 h-1.5 bg-[#0f172a] border-b border-r border-emerald-500/50 rotate-45 -mt-1" />
             </div>
-            <div className="w-1.5 h-1.5 bg-[#0f172a] border-b border-r border-emerald-500/50 rotate-45 -mt-1" />
-          </div>
-        ) : (
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-800/80 border border-slate-600 shadow-sm flex items-center justify-center opacity-70 hover:opacity-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-          </div>
-        )}
-      </Html>
+          ) : (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                selectAgent(agent.id);
+              }}
+              className="w-3 h-3 rounded-full bg-slate-800/90 border border-slate-500 shadow-sm flex items-center justify-center opacity-70 hover:opacity-100 cursor-pointer pointer-events-auto"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+            </div>
+          )}
+        </Html>
+      )}
 
       {/* ── 4. SELECTION RING ON FLOOR ────────────────────────────── */}
       {(isSelected || isHovered) && (

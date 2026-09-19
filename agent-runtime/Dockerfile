@@ -6,7 +6,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     golang-go \
-    && rm -rf /var/lib/apt/lists/*
+    && ARCH=$(uname -m) && \
+       if [ "$ARCH" = "x86_64" ]; then K_ARCH="amd64"; elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then K_ARCH="arm64"; else K_ARCH="amd64"; fi && \
+       curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.0/bin/linux/${K_ARCH}/kubectl" && \
+       chmod +x /usr/local/bin/kubectl && \
+       curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash && \
+    rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 

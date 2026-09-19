@@ -28,4 +28,5 @@ venv/
 .idea/
 .vscode/
 workspace/
+workspaces/
 *.tar.gz

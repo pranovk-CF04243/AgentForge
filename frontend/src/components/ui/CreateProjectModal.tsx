@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { Building2, X, Plus, Check, FolderGit2 } from 'lucide-react';
+import { Building2, X, Plus, Check, FolderGit2, ShieldAlert } from 'lucide-react';
+import { usePermissions } from '../../hooks/usePermissions';
 
 export const CreateProjectModal: React.FC = () => {
   const isCreateProjectModalOpen = useStore((state) => state.isCreateProjectModalOpen);
   const setCreateProjectModalOpen = useStore((state) => state.setCreateProjectModalOpen);
   const createProject = useStore((state) => state.createProject);
+  const perms = usePermissions();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -133,15 +135,18 @@ export const CreateProjectModal: React.FC = () => {
 
           {/* Target Git Repository */}
           <div className="space-y-1">
-            <label className="text-slate-700 dark:text-slate-300 font-medium flex items-center gap-1.5">
-              <FolderGit2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Target Git Repository (Optional)</span>
+            <label className="text-slate-700 dark:text-slate-300 font-medium flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <FolderGit2 className="w-3.5 h-3.5 text-blue-500" />
+                <span>Target Git Repository</span>
+              </span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal">Auto-provisions if left empty</span>
             </label>
             <input
               type="text"
               value={repoUrl}
               onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="https://github.com/organization/repository"
+              placeholder="Leave empty to auto-create dedicated GitHub repo (e.g. pranovk-CF04243/project-name)"
               className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-[#0a0c13] border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs focus:outline-none focus:border-blue-500 font-mono shadow-2xs"
             />
           </div>
@@ -180,14 +185,21 @@ export const CreateProjectModal: React.FC = () => {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !name.trim()}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-md cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{isSubmitting ? 'Creating...' : 'Initialize Project'}</span>
-            </button>
+            {perms.canCreateProject ? (
+              <button
+                type="submit"
+                disabled={isSubmitting || !name.trim()}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-md cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isSubmitting ? 'Creating...' : 'Initialize Project'}</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-slate-500 text-xs font-mono">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                <span>Requires Admin or Owner</span>
+              </div>
+            )}
           </div>
         </form>
       </div>

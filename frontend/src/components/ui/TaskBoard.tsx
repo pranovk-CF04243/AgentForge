@@ -17,6 +17,8 @@ export const TaskBoard: React.FC = () => {
   const agents = useStore((state) => state.agents);
   const selectAgent = useStore((state) => state.selectAgent);
   const retryTask = useStore((state) => state.retryTask);
+  const selectedProjectId = useStore((state) => state.selectedProjectId);
+  const setSelectedTaskId = useStore((state) => state.setSelectedTaskId);
   const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null);
 
   const handleRetryTask = async (taskId: string, e: React.MouseEvent) => {
@@ -31,7 +33,7 @@ export const TaskBoard: React.FC = () => {
     }
   };
 
-  const taskList = Object.values(tasks);
+  const taskList = Object.values(tasks).filter(task => task.projectId === selectedProjectId);
 
   const columns: { title: string; statusFilter: TaskStatus[]; icon: React.ReactNode; color: string }[] = [
     {
@@ -120,7 +122,8 @@ export const TaskBoard: React.FC = () => {
                     return (
                       <div
                         key={task.id}
-                        className="p-3 rounded-xl bg-white dark:bg-[#161a26] hover:bg-slate-50 dark:hover:bg-[#1c2233] border border-slate-200 dark:border-slate-800/80 shadow-2xs transition-all space-y-2 group"
+                        onClick={() => setSelectedTaskId(task.id)}
+                        className="p-3 rounded-xl bg-white dark:bg-[#161a26] hover:bg-slate-50 dark:hover:bg-[#1c2233] border border-slate-200 dark:border-slate-800/80 shadow-2xs hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500/70 transition-all space-y-2 group cursor-pointer"
                       >
                         {/* Header */}
                         <div className="flex items-start justify-between gap-2">
@@ -154,7 +157,7 @@ export const TaskBoard: React.FC = () => {
                         )}
 
                         {/* Dependencies */}
-                        {task.dependencies.length > 0 && (
+                        {(task.dependencies?.length || 0) > 0 && (
                           <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium">
                             <ArrowRight className="w-3 h-3" />
                             <span>Requires: {task.dependencies.join(', ')}</span>
@@ -184,7 +187,10 @@ export const TaskBoard: React.FC = () => {
                         <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
                           {assignedAgent ? (
                             <button
-                              onClick={() => selectAgent(assignedAgent.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                selectAgent(assignedAgent.id);
+                              }}
                               className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors text-[11px] font-medium cursor-pointer"
                             >
                               <UserCheck className="w-3.5 h-3.5" />
@@ -197,7 +203,7 @@ export const TaskBoard: React.FC = () => {
                           )}
 
                           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                            {task.tools.length} Tools
+                            {task.tools?.length || 0} Tools
                           </span>
                         </div>
                       </div>

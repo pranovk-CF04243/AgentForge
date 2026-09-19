@@ -12,6 +12,7 @@ export type AgentState =
 
 export type TaskStatus = 
   | 'PENDING'
+  | 'STAGED'
   | 'QUEUED'
   | 'ASSIGNED'
   | 'RUNNING'
@@ -39,8 +40,10 @@ export interface Agent {
   department: string;
   model: string;
   systemPrompt: string;
+  customPrompt?: string;
   skills: string[];
   tools: string[];
+  allowedRoles?: string[];
   state: AgentState;
   currentTaskId?: string;
   currentProject?: string;
@@ -62,6 +65,7 @@ export interface Task {
   description: string;
   priority: Priority;
   status: TaskStatus;
+  epicId?: string;
   assignedTo?: string;
   dependencies: string[];
   parentTaskId?: string;
@@ -76,6 +80,7 @@ export interface Task {
   prUrl?: string;
   requiresApproval?: boolean;
   errorDetails?: string;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +96,8 @@ export interface Project {
   status: string;
   progress: number;
   agentIds: string[];
+  ownerId?: string;
+  workspaceId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,3 +149,88 @@ export interface APMMetrics {
   totalTokens: number;
   estimatedCostUsd: number;
 }
+
+export interface DeploymentHealthReport {
+  projectId: string;
+  namespace: string;
+  overall: 'HEALTHY' | 'DEGRADED' | 'FAILED';
+  podCheckPassed: boolean;
+  logScanPassed: boolean;
+  healthProbePassed: boolean;
+  errorExcerpts: string[];
+  errorClassification: string;
+  remediationRequired: boolean;
+  remediationAttempt: number;
+  podDetails?: Array<{
+    name: string;
+    phase: string;
+    ready: boolean;
+    restarts: number;
+    reasons: string[];
+  }>;
+}
+
+export interface ClarificationQuestion {
+  id: string;
+  category: string;
+  question: string;
+  options: string[];
+  defaultOption?: string;
+  impact?: string;
+}
+
+export interface RequirementsSummary {
+  title: string;
+  executive_summary: string;
+  chosen_tech_stack: string[];
+  confirmed_decisions: Array<{
+    category: string;
+    decision: string;
+  }>;
+  stub_assumptions: Array<{
+    category: string;
+    assumption: string;
+  }>;
+}
+
+export interface ProjectCredential {
+  id: string;
+  projectId: string;
+  name: string;
+  type: 'env_var' | 'k8s_secret' | 'config_file' | string;
+  status: 'pending' | 'stub' | 'confirmed';
+  description: string;
+  exampleValue: string;
+  isRequired: boolean;
+  integration: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  provider: 'google' | 'anthropic';
+  displayName: string;
+  speedRating: number;
+  qualityRating: number;
+  inputPricePer1M: number;
+  outputPricePer1M: number;
+}
+
+export interface AgentConfigUpdate {
+  name?: string;
+  model?: string;
+  customPrompt?: string;
+  tools?: string[];
+}
+
+export interface CostProjection {
+  agentId: string;
+  currentModel: string;
+  newModel: string;
+  totalTokens: number;
+  currentCost30: number;
+  newCost30: number;
+  costDelta: number;
+}
+
