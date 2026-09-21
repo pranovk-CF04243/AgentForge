@@ -553,12 +553,29 @@ export const KubernetesConsoleModal: React.FC = () => {
                         </div>
                         <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 flex flex-col gap-1.5">
                           <span className="text-[10px] font-semibold text-slate-500 uppercase flex items-center justify-between">
-                            <span>Local Access (Port Forward)</span>
+                            <span>Local Access</span>
+                            {s.ports?.some((p: string) => p.includes(':3000')) && (
+                              <a
+                                href={`http://localhost:${s.ports.find((p: string) => p.includes(':3000')).split(':')[1].split('/')[0]}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold flex items-center gap-1"
+                              >
+                                Open Web App ↗
+                              </a>
+                            )}
                           </span>
-                          <code className="text-[10px] text-slate-700 dark:text-slate-300 font-mono select-all overflow-x-auto whitespace-nowrap">
-                            kubectl port-forward svc/{s.name} 8080:{s.ports[0] ? s.ports[0].split(":")[0] : "80"} -n {liveWorkloads.namespace}
-                          </code>
-
+                          {s.ports?.some((p: string) => p.includes(':3000')) ? (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+                                Running on NodePort: http://localhost:{s.ports.find((p: string) => p.includes(':3000')).split(':')[1].split('/')[0]}
+                              </span>
+                            </div>
+                          ) : (
+                            <code className="text-[10px] text-slate-700 dark:text-slate-300 font-mono select-all overflow-x-auto whitespace-nowrap">
+                              kubectl port-forward svc/{s.name} 8080:{s.ports[0] ? s.ports[0].split(":")[0] : "80"} -n {liveWorkloads.namespace}
+                            </code>
+                          )}
                         </div>
                       </div>
                     ))}
