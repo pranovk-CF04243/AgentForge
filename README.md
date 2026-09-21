@@ -102,3 +102,13 @@ npm run dev
 - `POST /api/incidents/resolve/:id` — Resolve active incident and return SRE to desk.
 - `POST /api/approvals` — Submit human approval decision (`APPROVED` / `REJECTED`).
 - `GET /ws` — Real-time bidirectional WebSocket event stream.
+
+---
+
+## Project Docs
+
+- [CLAUDE.md](CLAUDE.md) — architecture guide and working conventions for AI-assisted development in this repo.
+- [prompts.md](prompts.md) — log of prompts that drove code changes.
+- [BUGS.md](BUGS.md) — log of bugs found and how they were fixed.
+
+This README's Architecture Overview and API Reference are updated whenever a new feature ships.
