@@ -1,0 +1,10 @@
+- token capping and budget limiting
+- Based on GitHub invite, the projects has to be shared and the user has to work needs to make it proper
+- Existing project import and work - Based on the code, existing details needs to be studied and then new requirement should be added.
+- Infrastructure page needs to be checked and how it can be used
+- K8’s issue needs to be checked, its constantly crashing inside the sandbox
+- Flickering issue needs to fixed.
+- /health is mandatory should force the coding agents to follow.
+- Kubernetes console management needs to be checked for running/exposing the application outside of the sandbox.
+- Need to give access to the agents to read which port is currently being used inside the sandbox
+- The qa agent dint work, the tokens got increased, but not shown in task orchestration.
