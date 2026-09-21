@@ -272,6 +272,40 @@ func (h *APIHandler) AnalyzeBRD(w http.ResponseWriter, r *http.Request) {
 					"questions": parsedResult.Questions,
 				})
 				h.hub.Broadcast(clarMsg)
+
+				// Persist user prompt if present
+				content, _ := reqData["content"].(string)
+				if content != "" {
+					userMsg := &StudioMessage{
+						ID:         fmt.Sprintf("msg-user-%d", time.Now().UnixMilli()),
+						ProjectID:  projectID,
+						Sender:     "user",
+						SenderName: "Engineering Director",
+						Role:       "Human Director",
+						Avatar:     "HD",
+						Content:    content,
+						Timestamp:  time.Now().Format("03:04 PM"),
+						CreatedAt:  time.Now().Add(-2 * time.Second),
+					}
+					_ = h.orchestrator.SaveStudioMessage(userMsg)
+				}
+
+				clarText := "I have analyzed your specification prompt. To ensure our architecture and task dependency DAG are 100% aligned, I need a few clarifications on the technical requirements. Please review the questions in the Clarify tab."
+				if parsedResult.ExecutiveSummary != "" {
+					clarText = parsedResult.ExecutiveSummary + "\n\n" + clarText
+				}
+				orionMsg := &StudioMessage{
+					ID:         fmt.Sprintf("msg-clar-%d", time.Now().UnixMilli()+1),
+					ProjectID:  projectID,
+					Sender:     "orion",
+					SenderName: "Orion Spark",
+					Role:       "Lead Business Analyst",
+					Avatar:     "OS",
+					Content:    clarText,
+					Timestamp:  time.Now().Format("03:04 PM"),
+					CreatedAt:  time.Now(),
+				}
+				_ = h.orchestrator.SaveStudioMessage(orionMsg)
 			}
 
 			// 2. If phase is summary, broadcast requirements summary

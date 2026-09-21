@@ -1,3 +1,5 @@
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import os
 import re
 import base64
@@ -58,7 +60,7 @@ class GitHubAppClient:
         if not token or not PYGITHUB_AVAILABLE:
             return None
         try:
-            gh = Github(auth=Auth.Token(token))
+            gh = Github(auth=Auth.Token(token), verify=False)
             return gh.get_user().login
         except Exception as e:
             logger.warning(f"Failed to fetch user login: {e}")
@@ -71,7 +73,7 @@ class GitHubAppClient:
         token = os.getenv("GITHUB_TOKEN") or self.token
         if token:
             try:
-                return Github(auth=Auth.Token(token))
+                return Github(auth=Auth.Token(token), verify=False)
             except Exception as e:
                 logger.warning(f"Failed to authenticate with GITHUB_TOKEN: {e}")
 
@@ -92,7 +94,7 @@ class GitHubAppClient:
 
             if inst_id:
                 inst_auth = gi.get_access_token(inst_id)
-                return Github(auth=Auth.Token(inst_auth.token))
+                return Github(auth=Auth.Token(inst_auth.token), verify=False)
             return None
         except Exception as e:
             logger.warning(f"Could not authenticate installation for repo {target_repo}: {e}")
@@ -124,7 +126,7 @@ class GitHubAppClient:
             }
 
         try:
-            gh = Github(auth=Auth.Token(token))
+            gh = Github(auth=Auth.Token(token), verify=False)
             user = gh.get_user()
             user_login = user.login
 

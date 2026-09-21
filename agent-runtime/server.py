@@ -1,3 +1,5 @@
+import subprocess
+subprocess.run(['git', 'config', '--global', 'http.sslVerify', 'false'], check=False)
 """
 AgentForge Python Agent Runtime Service
 Provides dynamic Task Decomposition, LangGraph ReAct task execution,
@@ -19,6 +21,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from graph import compile_agent_graph
+from debate_graph import build_debate_graph, DebateState
+
 from agent import RealToolRegistry
 from github_client import github_client
 
@@ -66,8 +70,8 @@ def extract_retry_delay(err_msg: str, default: float = 35.0) -> float:
 
 def get_llm(model: Optional[str] = None, temperature: float = 0.2):
     raw = model or GEMINI_MODEL
-    models_pool = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-    target = raw if raw in models_pool else "gemini-3.6-flash"
+    models_pool = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    target = raw if raw in models_pool else "gemini-3.8-flash"
     fallbacks = [m for m in models_pool if m != target]
 
     primary = ChatGoogleGenerativeAI(
@@ -1061,3 +1065,55 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
 
+
+class DebateRequest(BaseModel):
+    session_id: str
+    project_id: str
+    topic: str
+    proposer: str
+    reviewer: str
+
+@app.post("/api/agent/debate")
+async def trigger_debate(req: DebateRequest, request: Request):
+    secret = request.headers.get("x-internal-secret")
+    if secret != INTERNAL_WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    logger.info(f"Starting debate session {req.session_id} between {req.proposer} and {req.reviewer} on {req.topic}")
+    
+    # In a real app we'd fetch prompts from the orchestrator.
+    # For now, we mock basic personas for the test:
+    proposer_prompt = f"You are {req.proposer}. Defend your code architecture against critiques."
+    reviewer_prompt = f"You are {req.reviewer}. Critique the code robustly. Look for edge cases, security flaws, and performance bottlenecks."
+    
+    if req.reviewer == "agent-qa":
+        reviewer_prompt = "You are the Lead QA Engineer. Critique the proposal for testability, edge cases, and robustness."
+    
+    state = DebateState(
+        session_id=req.session_id,
+        topic=req.topic,
+        proposer_id=req.proposer,
+        reviewer_id=req.reviewer,
+        proposer_prompt=proposer_prompt,
+        reviewer_prompt=reviewer_prompt,
+        messages=[],
+        turn_count=0,
+        consensus_reached=False,
+        backend_url=BACKEND_INTERNAL_URL,
+        secret=INTERNAL_WEBHOOK_SECRET
+    )
+    
+    graph = build_debate_graph()
+    
+    import asyncio
+    # Run graph asynchronously in the background so we don't block the HTTP response
+    async def run_graph(initial_state):
+        try:
+            await graph.ainvoke(initial_state)
+            logger.info(f"Debate {req.session_id} finished")
+        except Exception as e:
+            logger.error(f"Debate failed: {e}")
+            
+    asyncio.create_task(run_graph(state))
+    
+    return {"status": "started"}

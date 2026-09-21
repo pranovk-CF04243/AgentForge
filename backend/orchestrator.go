@@ -359,6 +359,18 @@ WORKFLOW:
 
 OUTPUT CONTRACT: Task conclusion must include integration test results and a list of all external services integrated with their health check status.`,
 
+		"agent-secops": `You are Zara Cipher, Lead SecOps Engineer at AgentForge.
+
+MISSION: Ensure all code and infrastructure is secure by design. Run static analysis tools, audit Dockerfiles for root execution, and find exposed secrets before deployment.
+
+OUTPUT CONTRACT: Provide a detailed security audit report and apply automated fixes where possible.`,
+
+		"agent-designer": `You are Isla Canvas, UX/UI Designer at AgentForge.
+
+MISSION: Ensure the application is beautiful, accessible, and consistent. Review frontend code for Tailwind best practices, responsive design, and visual hierarchy.
+
+OUTPUT CONTRACT: Commit UI/UX improvements directly to the frontend repository.`,
+
 		"agent-qa": `You are Sasha Quinn, Lead QA Engineer at AgentForge.
 
 MISSION: Ensure every code change is provably correct before it ships. "It works on my machine" is not an acceptable test result.
@@ -651,6 +663,19 @@ func (o *Orchestrator) seedDigitalEmployees() {
 			Model: "gemini-3.5-flash-lite", Desk: Vector3{X: -2.5, Y: 0.0, Z: 1.5},
 			Skills: []string{"Automated Testing", "Code Quality Auditing", "SonarQube Standards", "Security Testing"},
 			Tools:  []string{"run_command", "run_test_suite", "read_file"},
+		},
+
+		{
+			ID: "agent-secops", Name: "Zara Cipher", Role: "Lead SecOps Engineer", Dept: "Security", Zone: "engineering",
+			Model: "gemini-3.5-flash-lite", Desk: Vector3{X: -6.5, Y: 0.0, Z: -2.5},
+			Skills: []string{"OWASP Analysis", "Docker Scanning", "Secret Auditing", "Compliance"},
+			Tools:  []string{"run_command", "read_file", "write_file", "git_ops"},
+		},
+		{
+			ID: "agent-designer", Name: "Isla Canvas", Role: "UX/UI Designer", Dept: "Engineering", Zone: "engineering",
+			Model: "gemini-3.5-flash-lite", Desk: Vector3{X: 6.5, Y: 0.0, Z: -2.5},
+			Skills: []string{"TailwindCSS", "Accessibility (a11y)", "Design Systems", "Figma to Code"},
+			Tools:  []string{"run_command", "read_file", "write_file", "git_ops"},
 		},
 
 		// DevOps & Infra Pod
@@ -2120,20 +2145,6 @@ func (o *Orchestrator) AssignTaskDirectly(taskID, agentID string) (*Task, error)
 
 	o.safeSave(task)
 	o.safeSave(ag)
-		}
-		for _, ag := range o.agents {
-			hasWrite := false
-			hasGit := false
-			for _, t := range ag.Tools {
-				if t == "write_file" { hasWrite = true }
-				if t == "git_ops" { hasGit = true }
-			}
-			if hasWrite && !hasGit {
-				ag.Tools = append(ag.Tools, "git_ops")
-				ag.UpdatedAt = time.Now()
-				o.safeSave(ag)
-			}
-
 	o.recordEvent("agent.task.manual_assigned", ag.Name, fmt.Sprintf("Manually assigned to task: '%s'", task.Title))
 	o.broadcastAgentUpdate(ag)
 	o.broadcastTaskUpdate(task)
@@ -2502,3 +2513,41 @@ func (o *Orchestrator) UpdateAgentConfig(agentID string, update AgentConfigUpdat
 	return agent, nil
 }
 
+
+func (o *Orchestrator) DispatchDebateToRuntime(session DebateSession) {
+	pythonURL := os.Getenv("AGENT_RUNTIME_URL")
+	if pythonURL == "" {
+		pythonURL = "http://agent-runtime:8000"
+	}
+
+	payload := map[string]interface{}{
+		"session_id": session.ID,
+		"project_id": session.ProjectID,
+		"topic":      session.Topic,
+		"proposer":   session.ProposerAgentID,
+		"reviewer":   session.ReviewerAgentID,
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", pythonURL+"/api/agent/debate", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[Debate] Error creating request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	secret := os.Getenv("INTERNAL_WEBHOOK_SECRET")
+	if secret == "" { secret = "agentforge-internal-dev-secret" }
+	req.Header.Set("X-Internal-Secret", secret)
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[Debate] Error calling python runtime: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[Debate] Python runtime returned %d", resp.StatusCode)
+	}
+}

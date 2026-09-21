@@ -249,7 +249,6 @@ export const SpecificationStudio: React.FC = () => {
           title: extractedTitle,
           content: text,
         });
-        setPrdTab('EPICS');
       } else {
         await sendStudioMessage(text);
       }
@@ -436,7 +435,7 @@ const handleAnalyzeSpec = async () => {
 
   // Render PRD Navigator Content (shared across Cockpit left pane and War Room canvas tab)
   const renderPRDNavigator = (isFullCanvas = false) => (
-    <div className={`flex flex-col h-full bg-white dark:bg-[#111528] rounded-2xl overflow-hidden ${isFullCanvas ? '' : 'border border-slate-200 dark:border-slate-800 shadow-xl'}`}>
+    <div className={`flex flex-col h-full min-h-0 bg-white dark:bg-[#111528] rounded-2xl overflow-hidden ${isFullCanvas ? '' : 'border border-slate-200 dark:border-slate-800 shadow-xl'}`}>
       
       {/* Navigator Subheader */}
       <div className="px-4 py-2.5 bg-slate-50 dark:bg-[#161b34] border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -481,7 +480,7 @@ const handleAnalyzeSpec = async () => {
       </div>
 
       {/* Navigator Content */}
-      <div className="flex-1 p-3.5 overflow-y-auto space-y-3 text-xs custom-scroll">
+      <div className="flex-1 min-h-0 p-3.5 overflow-y-auto space-y-3 text-xs custom-scroll">
         {prdTab === 'CLARIFICATION' && brdQuestions.length > 0 ? (
           <div className="space-y-3.5">
             {/* Orion Spark Header Card */}
@@ -1311,7 +1310,7 @@ const handleAnalyzeSpec = async () => {
           {/* PANE 1: PRD & REQUIREMENTS NAVIGATOR (Visible in Cockpit) */}
           {/* ======================================================== */}
           {specStudioLayout === 'COCKPIT' && (
-            <div className="col-span-3 h-full">
+            <div className="col-span-3 h-full min-h-0 overflow-hidden">
               {renderPRDNavigator(false)}
             </div>
           )}
@@ -1629,7 +1628,7 @@ const handleAnalyzeSpec = async () => {
               
               {/* TAB: PRD & REQUIREMENTS IN WAR ROOM */}
               {specStudioLayout === 'WAR_ROOM' && activeStudioTab === 'PRD' && (
-                <div className="h-full">
+                <div className="h-full min-h-0 overflow-hidden">
                   {renderPRDNavigator(true)}
                 </div>
               )}

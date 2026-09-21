@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
 import { useStore } from './store/useStore';
 import { CommandNavbar } from './components/ui/CommandNavbar';
+import { DebateRoomModal } from './components/ui/DebateRoomModal';
+
 import { IncidentWarRoom } from './components/ui/IncidentWarRoom';
 import { ProjectSelector } from './components/ui/ProjectSelector';
 import { OfficeScene } from './components/3d/OfficeScene';
@@ -93,6 +95,7 @@ export const App: React.FC = () => {
 
   const { isAuthenticated, isLoading, restoreSession, checkBootstrap } = useAuthStore();
   const [pathname, setPathname] = React.useState(window.location.pathname);
+  const [isDebateRoomOpen, setIsDebateRoomOpen] = React.useState(false);
 
   useEffect(() => {
     const onPopState = () => setPathname(window.location.pathname);
@@ -159,6 +162,12 @@ export const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 dark:bg-[#07090e] text-slate-800 dark:text-slate-100 font-sans transition-colors duration-200">
       {/* Top Command Navbar */}
+      <button onClick={() => setIsDebateRoomOpen(true)} className="fixed bottom-24 right-8 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full shadow-lg font-medium flex items-center gap-2 z-40 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+        Debate Room
+      </button>
+      {isDebateRoomOpen && <DebateRoomModal onClose={() => setIsDebateRoomOpen(false)} />}
+
       <CommandNavbar />
 
       {/* Online Team Presence Bar */}

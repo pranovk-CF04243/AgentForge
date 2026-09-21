@@ -112,6 +112,10 @@ export interface Epic {
 interface State {
   // Data
   agents: Record<string, Agent>;
+  debates: Record<string, any>;
+  addDebate: (debate: any) => void;
+  addDebateMessage: (msg: any) => void;
+
   tasks: Record<string, Task>;
   projects: Record<string, Project>;
   incidents: Record<string, Incident>;
@@ -316,6 +320,24 @@ export const initialStudioMessages: StudioMessage[] = [
 
 export const useStore = create<State>((set, get) => ({
   agents: {},
+  debates: {},
+  addDebate: (debate) => set((state) => ({
+    debates: { ...state.debates, [debate.id]: debate }
+  })),
+  addDebateMessage: (msg) => set((state) => {
+    const d = state.debates[msg.sessionId];
+    if (!d) return state;
+    return {
+      debates: {
+        ...state.debates,
+        [msg.sessionId]: {
+          ...d,
+          messages: [...(d.messages || []), msg]
+        }
+      }
+    };
+  }),
+
   tasks: {},
   projects: {},
   incidents: {},
@@ -914,6 +936,7 @@ export const useStore = create<State>((set, get) => ({
           isSpecStudioOpen: true,
           isPlanVerificationModalOpen: false,
         });
+        get().fetchProjectStudioMessages(payload.projectId);
         return;
       }
 
@@ -1004,8 +1027,29 @@ export const useStore = create<State>((set, get) => ({
       }));
 
       get().fetchProjectCredentials(payload.projectId);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error analyzing BRD:', e);
+      const errMsg: StudioMessage = {
+        id: `msg-err-${Date.now()}`,
+        projectId: payload.projectId,
+        sender: 'orion',
+        senderName: 'Orion Spark',
+        role: 'Lead Business Analyst',
+        avatar: 'OS',
+        content: `⚠️ I encountered an issue while processing your requirements: ${e?.message || 'Internal analysis error'}. Please verify the prompt and try again.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      set((state) => {
+        const currentMsgs = state.projectStudioMessages[payload.projectId] || state.studioMessages || [];
+        const updated = [...currentMsgs, errMsg];
+        return {
+          studioMessages: updated,
+          projectStudioMessages: {
+            ...state.projectStudioMessages,
+            [payload.projectId]: updated,
+          },
+        };
+      });
     } finally {
       set({ isAnalyzingBRD: false });
     }

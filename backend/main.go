@@ -147,6 +147,9 @@ func main() {
 	// Webhook & Agent Interaction
 	mux.HandleFunc("/api/internal/task-event", handler.HandleTaskEventWebhook)
 	mux.HandleFunc("/api/internal/deployment-failure", handler.HandleDeploymentFailure)
+	mux.HandleFunc("/api/internal/debate/message", handler.HandlePostDebateMessage)
+	mux.HandleFunc("/api/debates", handler.HandleStartDebate)
+
 	mux.HandleFunc("/api/v1/webhooks/alerts", handler.HandleAlertWebhook)
 
 	// Real-Time Streaming Endpoints

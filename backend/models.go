@@ -159,6 +159,8 @@ type Project struct {
 	AgentIDs      []string  `gorm:"serializer:json" json:"agentIds"`
 	Epics         []Epic    `gorm:"foreignKey:ProjectID" json:"epics,omitempty"`
 	// OwnerID is the UserID of the workspace member who created this project
+	AutoCodeReview bool      `json:"autoCodeReview"`
+
 	OwnerID       string    `gorm:"index" json:"ownerId,omitempty"`
 	// WorkspaceID scopes this project to a workspace (multi-tenancy)
 	WorkspaceID   string    `gorm:"index" json:"workspaceId,omitempty"`
@@ -543,4 +545,26 @@ type PresenceUser struct {
 	Role        string `json:"role"`
 	ProjectID   string `json:"projectId,omitempty"`
 	ProjectName string `json:"projectName,omitempty"`
+}
+
+// DebateSession represents a multi-agent collaboration / code review room
+type DebateSession struct {
+	ID              string          `gorm:"primaryKey" json:"id"`
+	ProjectID       string          `gorm:"index" json:"projectId"`
+	TaskID          string          `gorm:"index" json:"taskId"`
+	ProposerAgentID string          `json:"proposerAgentId"`
+	ReviewerAgentID string          `json:"reviewerAgentId"`
+	Topic           string          `json:"topic"`
+	Status          string          `json:"status"` // "active", "consensus", "escalated"
+	Messages        []DebateMessage `gorm:"foreignKey:SessionID" json:"messages"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
+}
+
+type DebateMessage struct {
+	ID        string    `gorm:"primaryKey" json:"id"`
+	SessionID string    `gorm:"index" json:"sessionId"`
+	AgentID   string    `json:"agentId"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"createdAt"`
 }
