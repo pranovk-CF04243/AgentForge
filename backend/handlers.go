@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,6 +109,31 @@ func (h *APIHandler) DecomposeProject(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(tasks)
 }
 
+// withDefaultModel decodes a JSON request body, injects the current global
+// default provider/model (unless the caller already specified one), and
+// re-encodes it for forwarding to the Python runtime. Used by proxy-style
+// handlers (AnalyzeBRD, ReplanTasks) that otherwise pass r.Body straight
+// through without Go ever parsing it.
+func (h *APIHandler) withDefaultModel(body io.Reader) (io.Reader, error) {
+	var payload map[string]interface{}
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	if _, ok := payload["provider"]; !ok {
+		def := h.orchestrator.modelCatalog.GetDefault()
+		payload["provider"] = def.Provider
+		payload["model"] = def.Model
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(out), nil
+}
+
 func (h *APIHandler) AnalyzeBRD(w http.ResponseWriter, r *http.Request) {
 	enableCORS(w)
 	if r.Method == http.MethodOptions {
@@ -123,8 +149,14 @@ func (h *APIHandler) AnalyzeBRD(w http.ResponseWriter, r *http.Request) {
 		pythonURL = "http://agent-runtime:8000"
 	}
 
+	forwardBody, err := h.withDefaultModel(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Post(pythonURL+"/api/analyze-brd", "application/json", r.Body)
+	resp, err := client.Post(pythonURL+"/api/analyze-brd", "application/json", forwardBody)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to contact analysis engine: %v", err), http.StatusBadGateway)
 		return
@@ -151,8 +183,14 @@ func (h *APIHandler) ReplanTasks(w http.ResponseWriter, r *http.Request) {
 		pythonURL = "http://agent-runtime:8000"
 	}
 
+	forwardBody, err := h.withDefaultModel(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
 	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Post(pythonURL+"/api/replan", "application/json", r.Body)
+	resp, err := client.Post(pythonURL+"/api/replan", "application/json", forwardBody)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to replan with architect: %v", err), http.StatusBadGateway)
 		return
@@ -264,6 +302,115 @@ func (h *APIHandler) HandleTaskEventWebhook(w http.ResponseWriter, r *http.Reque
 	h.orchestrator.HandleTaskEvent(payload)
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// HandleBudgetTopup services requests from the Python agent-runtime for a
+// capped top-up from the shared crisis pool when an agent's per-task token
+// allotment runs out mid-execution. Internal service-to-service endpoint,
+// same trust boundary as HandleTaskEventWebhook (no auth).
+func (h *APIHandler) HandleBudgetTopup(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req BudgetTopupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[HandleBudgetTopup] JSON decode error: %v", err)
+		http.Error(w, "Invalid top-up request", http.StatusBadRequest)
+		return
+	}
+
+	granted := h.orchestrator.RequestBudgetTopup(req.TaskID, req.AgentID, req.RequestedTokens)
+
+	h.orchestrator.mu.RLock()
+	remaining := h.orchestrator.crisisPool
+	h.orchestrator.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(BudgetTopupResponse{
+		GrantedTokens: granted,
+		PoolRemaining: remaining,
+	})
+}
+
+// GetModelCatalog returns the global default LLM (provider, model) and the
+// full list of selectable models, for the frontend's model dropdowns.
+func (h *APIHandler) GetModelCatalog(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.orchestrator.modelCatalog.Snapshot())
+}
+
+// UpdateAgentModel sets or clears (both fields empty) a per-agent
+// provider/model override.
+func (h *APIHandler) UpdateAgentModel(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	agentID := strings.TrimPrefix(r.URL.Path, "/api/agents/")
+	agentID = strings.TrimSuffix(agentID, "/model")
+
+	var req UpdateAgentModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	agent, err := h.orchestrator.SetAgentModelOverride(agentID, req.Provider, req.Model)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"agentId":  agentID,
+		"provider": agent.Provider,
+		"model":    agent.Model,
+	})
+}
+
+// UpdateDefaultModel updates the global default (provider, model) used by
+// any agent without its own override. Persists to the model catalog's JSON
+// config file on disk so the change survives a backend restart.
+func (h *APIHandler) UpdateDefaultModel(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req UpdateDefaultModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.orchestrator.SetGlobalDefaultModel(req.Provider, req.Model); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.orchestrator.modelCatalog.Snapshot())
 }
 
 func (h *APIHandler) GetTasks(w http.ResponseWriter, r *http.Request) {

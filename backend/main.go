@@ -24,7 +24,7 @@ func initDB() {
 		return
 	}
 
-	err = db.AutoMigrate(&Agent{}, &Task{}, &Project{}, &SystemEvent{}, &Incident{}, &HumanApproval{})
+	err = db.AutoMigrate(&Agent{}, &Task{}, &Project{}, &SystemEvent{}, &Incident{}, &HumanApproval{}, &BudgetPool{})
 	if err != nil {
 		log.Printf("Warning: AutoMigrate encountered error: %v", err)
 	}
@@ -57,6 +57,8 @@ func main() {
 	mux.HandleFunc("/api/projects/replan", handler.ReplanTasks)
 	mux.HandleFunc("/api/projects/launch-plan", handler.LaunchPlan)
 	mux.HandleFunc("/api/agents", handler.GetAgents)
+	mux.HandleFunc("/api/config/models", handler.GetModelCatalog)
+	mux.HandleFunc("/api/config/models/default", handler.UpdateDefaultModel)
 	mux.HandleFunc("/api/tasks", handler.GetTasks)
 	mux.HandleFunc("/api/events", handler.GetEvents)
 	mux.HandleFunc("/api/metrics", handler.GetMetrics)
@@ -66,6 +68,7 @@ func main() {
 
 	// Webhook & Agent Interaction
 	mux.HandleFunc("/api/internal/task-event", handler.HandleTaskEventWebhook)
+	mux.HandleFunc("/api/internal/request-budget-topup", handler.HandleBudgetTopup)
 
 	// Real-Time Streaming Endpoints
 	mux.HandleFunc("/ws", handler.HandleWebSocket)
@@ -79,6 +82,10 @@ func main() {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/agents/") && strings.HasSuffix(r.URL.Path, "/instruct") {
 			handler.InstructAgent(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/agents/") && strings.HasSuffix(r.URL.Path, "/model") {
+			handler.UpdateAgentModel(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/tasks/") && strings.HasSuffix(r.URL.Path, "/retry") {

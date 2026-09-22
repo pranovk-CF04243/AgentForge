@@ -1,0 +1,24 @@
+{
+  "default": { "token_budget": 50000, "cost_budget_usd": 5.0 },
+  "roles": {
+    "Project Manager": { "token_budget": 30000, "cost_budget_usd": 3.0 },
+    "Software Architect": { "token_budget": 90000, "cost_budget_usd": 9.0 },
+    "Jira & Workflow Agent": { "token_budget": 20000, "cost_budget_usd": 2.0 },
+    "Business Analyst (BA) Agent": { "token_budget": 40000, "cost_budget_usd": 4.0 },
+    "Senior Developer": { "token_budget": 80000, "cost_budget_usd": 8.0 },
+    "Junior Developer (Frontend)": { "token_budget": 60000, "cost_budget_usd": 6.0 },
+    "Junior Developer (Full-Stack)": { "token_budget": 60000, "cost_budget_usd": 6.0 },
+    "Lead QA Engineer": { "token_budget": 60000, "cost_budget_usd": 6.0 },
+    "QA Automation Engineer": { "token_budget": 50000, "cost_budget_usd": 5.0 },
+    "DevOps Engineer": { "token_budget": 70000, "cost_budget_usd": 7.0 },
+    "Cloud SRE Engineer": { "token_budget": 70000, "cost_budget_usd": 7.0 },
+    "Senior Support Engineer": { "token_budget": 50000, "cost_budget_usd": 5.0 },
+    "Junior Support Engineer": { "token_budget": 40000, "cost_budget_usd": 4.0 },
+    "Project Analytics Specialist": { "token_budget": 40000, "cost_budget_usd": 4.0 }
+  },
+  "crisis_pool": {
+    "initial_tokens": 200000,
+    "max_draw_per_task": 10000,
+    "max_draw_pct_of_pool": 25
+  }
+}

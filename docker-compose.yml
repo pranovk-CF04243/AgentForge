@@ -61,6 +61,12 @@ services:
       REDIS_URL: "redis://redis:6379"
       KAFKA_BROKERS: "redpanda:9092"
       AGENT_RUNTIME_URL: "http://agent-runtime:8000"
+      TOKEN_BUDGET_CONFIG_PATH: "/app/config/token_budgets.json"
+      MODEL_CATALOG_CONFIG_PATH: "/app/config/model_catalog.json"
+    volumes:
+      # Writable (not :ro): the model catalog's global default is persisted
+      # back to model_catalog.json on disk when changed via the API/UI.
+      - ./config:/app/config
     ports:
       - "8080:8080"
     depends_on:
@@ -86,6 +92,8 @@ services:
       BACKEND_URL: "http://backend:8080"
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.5-flash-lite}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+      NVIDIA_API_KEY: "${NVIDIA_API_KEY}"
       GITHUB_APP_ID: "${GITHUB_APP_ID}"
       GITHUB_APP_PRIVATE_KEY: "${GITHUB_APP_PRIVATE_KEY}"
       GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET}"

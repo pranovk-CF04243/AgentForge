@@ -64,6 +64,7 @@ type Agent struct {
 	Description    string     `json:"description"`
 	Department     string     `json:"department"`
 	Model          string     `json:"model"`
+	Provider       string     `json:"provider"` // "" = no override, use global default; else "gemini"|"ollama"|"nvidia"
 	SystemPrompt   string     `json:"systemPrompt"`
 	Skills         []string   `gorm:"serializer:json" json:"skills"`
 	Tools          []string   `gorm:"serializer:json" json:"tools"`
@@ -76,6 +77,7 @@ type Agent struct {
 	Zone           string     `json:"zone"`
 	TotalTokens    int64      `json:"totalTokens"`
 	EstimatedCost  float64    `json:"estimatedCost"`
+	BankedSurplus  int64      `json:"bankedSurplus"`
 	SuccessRate    float64    `json:"successRate"`
 	ActiveAction   string     `json:"activeAction,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
@@ -237,4 +239,64 @@ type TaskEventPayload struct {
 	Branch     string                 `json:"branch,omitempty"`
 	PRURL      string                 `json:"pr_url,omitempty"`
 	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// BudgetPool persists the shared "crisis pool" of leftover tokens that any
+// agent may draw a capped top-up from when its own per-task budget runs out.
+// A single row (ID "global") is used; see backend/budget_config.go.
+type BudgetPool struct {
+	ID     string `gorm:"primaryKey" json:"id"`
+	Tokens int64  `json:"tokens"`
+}
+
+// BudgetTopupRequest is sent by the Python agent-runtime to
+// /api/internal/request-budget-topup when an agent's own token allotment for
+// the current task has been exhausted mid-execution.
+type BudgetTopupRequest struct {
+	TaskID          string `json:"task_id"`
+	AgentID         string `json:"agent_id"`
+	RequestedTokens int64  `json:"requested_tokens"`
+}
+
+// BudgetTopupResponse reports how many tokens were actually granted from the
+// shared crisis pool (capped per backend/budget_config.go's CrisisPoolConfig)
+// and how much the pool has left afterward.
+type BudgetTopupResponse struct {
+	GrantedTokens int64 `json:"granted_tokens"`
+	PoolRemaining int64 `json:"pool_remaining"`
+}
+
+// ModelRef identifies an LLM by provider + model name, e.g.
+// {"gemini", "gemini-2.5-flash"}. Used both for the global default and for
+// an agent's per-agent override (see backend/model_catalog.go).
+type ModelRef struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// AvailableModelEntry is one selectable catalog entry surfaced to the
+// frontend's model dropdowns.
+type AvailableModelEntry struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Label    string `json:"label"`
+}
+
+// ModelCatalogResponse is served by GET /api/config/models.
+type ModelCatalogResponse struct {
+	Default         ModelRef               `json:"default"`
+	AvailableModels []AvailableModelEntry  `json:"available_models"`
+}
+
+// UpdateAgentModelRequest is the body for PATCH /api/agents/{id}/model.
+// Provider and Model both empty means "clear override, use global default".
+type UpdateAgentModelRequest struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// UpdateDefaultModelRequest is the body for PUT /api/config/models/default.
+type UpdateDefaultModelRequest struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }

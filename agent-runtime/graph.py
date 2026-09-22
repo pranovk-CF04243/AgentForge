@@ -4,7 +4,6 @@ Orchestrates autonomous agents with Google Gemini 2.5 Flash, real-time token str
 and sandboxed tool execution.
 """
 
-import os
 import json
 import logging
 from typing import TypedDict, Annotated, Sequence, List, Dict, Any, Optional
@@ -13,9 +12,10 @@ from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END, START
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from agent import tool_registry
+from budget import TaskBudgetState, enforce_budget_or_raise
+from llm_factory import build_chat_model
 
 logger = logging.getLogger("AgentForge.Graph")
 
@@ -95,9 +95,24 @@ def compile_agent_graph(
     system_prompt: str,
     skills: List[str],
     allowed_tools: List[str],
+    budget_state: Optional[TaskBudgetState] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
 ):
     """
     Compiles a LangGraph ReAct agent customized for the specific persona.
+
+    budget_state, if provided, is checked before every new agent-loop
+    iteration (see route_condition below): once tokens_used_so_far reaches
+    its total_available() budget, the loop is halted (attempting one capped
+    crisis-pool top-up first) by raising BudgetExceededError instead of
+    continuing to call the LLM/tools. The caller (server.py) is responsible
+    for keeping budget_state.tokens_used_so_far up to date as tokens stream
+    in, since that accounting happens outside this compiled graph.
+
+    provider/model select which LLM backs this agent (see llm_factory.py) —
+    both default to None, which resolves to Gemini + GEMINI_MODEL env var,
+    fully backward compatible with callers that don't pass them.
     """
     # Filter tools for this agent role
     agent_tools = [TOOL_MAP[t] for t in allowed_tools if t in TOOL_MAP]
@@ -141,12 +156,9 @@ NON-NEGOTIABLE ENTERPRISE GUARDRAILS:
 =========================================
 """
 
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-
-    llm = ChatGoogleGenerativeAI(
-        model=gemini_model,
-        google_api_key=gemini_api_key if gemini_api_key else None,
+    llm = build_chat_model(
+        provider=provider,
+        model=model,
         temperature=0.2,
         streaming=True,
         max_retries=6,
@@ -163,6 +175,18 @@ NON-NEGOTIABLE ENTERPRISE GUARDRAILS:
     tool_node = ToolNode(agent_tools)
 
     def route_condition(state: AgentWorkflowState):
+        if budget_state is not None:
+            # budget_state.tokens_used_so_far is kept current by server.py's
+            # event loop (it owns the real running token count from
+            # on_chat_model_stream events, which happen outside this
+            # compiled graph). Raises BudgetExceededError (after attempting
+            # one capped crisis-pool top-up) once the agent has run out of
+            # budget for this task. Propagates out through astream_events in
+            # server.py, which reports it as a normal task-failure "error"
+            # event — the same graceful-stop path used for any other
+            # execution error.
+            enforce_budget_or_raise(budget_state)
+
         last_msg = state["messages"][-1]
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
             return "tools"

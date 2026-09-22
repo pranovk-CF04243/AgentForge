@@ -25,6 +25,8 @@ export const CommandNavbar: React.FC = () => {
   const triggerIncident = useStore((state) => state.triggerIncident);
   const theme = useStore((state) => state.theme);
   const toggleTheme = useStore((state) => state.toggleTheme);
+  const modelCatalog = useStore((state) => state.modelCatalog);
+  const setGlobalDefaultModel = useStore((state) => state.setGlobalDefaultModel);
 
   const activeIncidentsCount = Object.keys(incidents).length;
   const pendingApprovalsCount = Object.values(approvals).filter((a) => a.status === 'PENDING').length;
@@ -92,6 +94,27 @@ export const CommandNavbar: React.FC = () => {
           <span className="text-slate-500 dark:text-slate-400">Cost:</span>
           <span className="font-mono text-slate-700 dark:text-slate-200">${metrics.estimatedCostUsd.toFixed(3)}</span>
         </div>
+
+        {/* Global Default LLM */}
+        {modelCatalog && (
+          <div className="flex items-center gap-1.5 text-xs" title="Global default LLM for agents without their own override">
+            <Cpu className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              value={`${modelCatalog.default.provider}:${modelCatalog.default.model}`}
+              onChange={(e) => {
+                const [provider, model] = e.target.value.split(':');
+                setGlobalDefaultModel(provider, model);
+              }}
+              className="bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 text-slate-600 dark:text-slate-300 text-[11px] focus:outline-none cursor-pointer"
+            >
+              {modelCatalog.available_models.map((m) => (
+                <option key={`${m.provider}:${m.model}`} value={`${m.provider}:${m.model}`}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Approvals Alert */}
         {pendingApprovalsCount > 0 && (

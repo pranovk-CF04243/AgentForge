@@ -8,3 +8,4 @@
 - Kubernetes console management needs to be checked for running/exposing the application outside of the sandbox.
 - Need to give access to the agents to read which port is currently being used inside the sandbox
 - The qa agent dint work, the tokens got increased, but not shown in task orchestration.
+- Nvidia nd Ollama needs to added

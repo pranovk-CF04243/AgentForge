@@ -14,10 +14,11 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from graph import compile_agent_graph
+from budget import TaskBudgetState, BudgetExceededError
+from llm_factory import build_chat_model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AgentForge.Server")
@@ -71,6 +72,8 @@ def strip_codeblock(raw: str) -> str:
 class DecomposeRequest(BaseModel):
     project_id: str
     prompt: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class ExecuteTaskRequest(BaseModel):
     task_id: str
@@ -84,6 +87,9 @@ class ExecuteTaskRequest(BaseModel):
     skills: List[str]
     tools: List[str]
     dependencies: List[str]
+    token_budget: int = 1_000_000  # generous fallback if the backend omits it
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class InstructRequest(BaseModel):
     agent_id: str
@@ -91,6 +97,8 @@ class InstructRequest(BaseModel):
     role: str
     system_prompt: str
     instruction: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 class AnalyzeBRDRequest(BaseModel):
     project_id: Optional[str] = None
@@ -99,6 +107,8 @@ class AnalyzeBRDRequest(BaseModel):
     title: Optional[str] = "Project Initiative"
     supplementary_notes: Optional[str] = ""
     supplementaryNotes: Optional[str] = ""
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
     def get_project_id(self) -> str:
         return self.project_id or self.projectId or "proj-1"
@@ -113,6 +123,8 @@ class ReplanRequest(BaseModel):
     currentTasks: Optional[List[Dict[str, Any]]] = None
     revision_prompt: Optional[str] = None
     revisionPrompt: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
     def get_project_id(self) -> str:
         return self.project_id or self.projectId or "proj-1"
@@ -228,11 +240,7 @@ Return ONLY the raw JSON array. Do not include markdown code block quotes.
 """
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model=GEMINI_MODEL,
-            google_api_key=GEMINI_API_KEY if GEMINI_API_KEY else None,
-            temperature=0.2,
-        )
+        llm = build_chat_model(provider=req.provider, model=req.model, temperature=0.2)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         raw_content = extract_text(response.content)
         cleaned_json = strip_codeblock(raw_content)
@@ -259,6 +267,12 @@ async def execute_task(req: ExecuteTaskRequest, background_tasks: BackgroundTask
 
 async def run_agent_execution(req: ExecuteTaskRequest):
     """Asynchronously runs the compiled LangGraph ReAct agent and emits live webhook events."""
+    budget_state = TaskBudgetState(
+        agent_id=req.agent_id,
+        agent_name=req.agent_name,
+        task_id=req.task_id,
+        budget_for_this_task=req.token_budget,
+    )
     agent_graph = compile_agent_graph(
         agent_id=req.agent_id,
         name=req.agent_name,
@@ -266,6 +280,9 @@ async def run_agent_execution(req: ExecuteTaskRequest):
         system_prompt=req.system_prompt,
         skills=req.skills,
         allowed_tools=req.tools,
+        budget_state=budget_state,
+        provider=req.provider,
+        model=req.model,
     )
 
     initial_state = {
@@ -316,6 +333,7 @@ Instructions:
                 chunk = event["data"].get("chunk")
                 if chunk and chunk.content:
                     tokens_accumulated += 1
+                    budget_state.tokens_used_so_far = tokens_accumulated
                     await send_event_to_backend({
                         "type": "token",
                         "task_id": req.task_id,
@@ -368,6 +386,18 @@ Instructions:
             "progress": 100,
         })
 
+    except BudgetExceededError as e:
+        # Graceful stop: the agent ran out of its token budget (and any
+        # crisis-pool top-up wasn't enough). Reported as a normal task
+        # failure, same path as any other execution error.
+        logger.warning(f"Task {req.task_id} stopped: {e}")
+        await send_event_to_backend({
+            "type": "error",
+            "task_id": req.task_id,
+            "agent_id": req.agent_id,
+            "content": str(e),
+        })
+
     except Exception as e:
         logger.error(f"Error executing agent task {req.task_id}: {e}")
         await send_event_to_backend({
@@ -395,11 +425,7 @@ Respond professionally, technically, and concisely to their instruction or quest
 """
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model=GEMINI_MODEL,
-            google_api_key=GEMINI_API_KEY if GEMINI_API_KEY else None,
-            temperature=0.3,
-        )
+        llm = build_chat_model(provider=req.provider, model=req.model, temperature=0.3)
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=req.instruction),
@@ -522,11 +548,7 @@ Return ONLY the raw JSON object. Do not include markdown code block syntax.
 """
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model=GEMINI_MODEL,
-            google_api_key=GEMINI_API_KEY if GEMINI_API_KEY else None,
-            temperature=0.2,
-        )
+        llm = build_chat_model(provider=req.provider, model=req.model, temperature=0.2)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         raw_content = extract_text(response.content)
         cleaned = strip_codeblock(raw_content)
@@ -564,11 +586,7 @@ Return ONLY a valid JSON array of Task objects. Return raw JSON only, no markdow
 """
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model=GEMINI_MODEL,
-            google_api_key=GEMINI_API_KEY if GEMINI_API_KEY else None,
-            temperature=0.2,
-        )
+        llm = build_chat_model(provider=req.provider, model=req.model, temperature=0.2)
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         raw_content = extract_text(response.content)
         cleaned = strip_codeblock(raw_content)

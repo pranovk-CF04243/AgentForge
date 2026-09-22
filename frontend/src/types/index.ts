@@ -38,6 +38,7 @@ export interface Agent {
   description: string;
   department: string;
   model: string;
+  provider: string; // "" = no override, use global default; else "gemini" | "ollama" | "nvidia"
   systemPrompt: string;
   skills: string[];
   tools: string[];
@@ -141,4 +142,20 @@ export interface APMMetrics {
   activeIncidents: number;
   totalTokens: number;
   estimatedCostUsd: number;
+}
+
+export interface ModelRef {
+  provider: string;
+  model: string;
+}
+
+export interface AvailableModelEntry {
+  provider: string;
+  model: string;
+  label: string;
+}
+
+export interface ModelCatalog {
+  default: ModelRef;
+  available_models: AvailableModelEntry[];
 }

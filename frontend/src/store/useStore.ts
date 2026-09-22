@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Agent, Task, Project, Incident, HumanApproval, APMMetrics, SystemEvent } from '../types';
+import { Agent, Task, Project, Incident, HumanApproval, APMMetrics, SystemEvent, ModelCatalog } from '../types';
 
 export type ViewMode = '3D_OFFICE' | 'KANBAN_DAG' | 'APM_INFRA' | 'SPLIT_VIEW' | 'SERVICE_ACCOUNTS';
 export type CameraPreset = 'ALL' | 'DEVELOPMENT' | 'QA' | 'DEVOPS' | 'ARCHITECTURE' | 'INCIDENT_ROOM' | 'SERVER_ROOM';
@@ -14,6 +14,7 @@ interface State {
   approvals: Record<string, HumanApproval>;
   events: SystemEvent[];
   metrics: APMMetrics;
+  modelCatalog: ModelCatalog | null;
 
   // UI state
   theme: Theme;
@@ -54,6 +55,8 @@ interface State {
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   sendAgentInstruction: (agentId: string, instruction: string) => void;
+  updateAgentModel: (agentId: string, provider: string, model: string) => Promise<void>;
+  setGlobalDefaultModel: (provider: string, model: string) => Promise<void>;
 }
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
@@ -116,6 +119,7 @@ export const useStore = create<State>((set, get) => ({
     totalTokens: 462100,
     estimatedCostUsd: 1.38,
   },
+  modelCatalog: null,
 
   theme: getInitialTheme(),
   viewMode: 'SPLIT_VIEW',
@@ -245,7 +249,8 @@ export const useStore = create<State>((set, get) => ({
           fetch(`${BACKEND_URL}/api/metrics`).then((r) => r.json()),
           fetch(`${BACKEND_URL}/api/events`).then((r) => r.json()),
           fetch(`${BACKEND_URL}/api/incidents`).then((r) => r.json()),
-        ]).then(([agentsList, tasksList, projectsList, metrics, eventsList, incList]) => {
+          fetch(`${BACKEND_URL}/api/config/models`).then((r) => r.json()).catch(() => null),
+        ]).then(([agentsList, tasksList, projectsList, metrics, eventsList, incList, modelCatalog]) => {
           const agentsMap: Record<string, Agent> = {};
           (agentsList || []).forEach((a: Agent) => { agentsMap[a.id] = a; });
           const tasksMap: Record<string, Task> = {};
@@ -262,6 +267,7 @@ export const useStore = create<State>((set, get) => ({
             metrics: metrics || get().metrics,
             events: eventsList || [],
             incidents: incMap,
+            modelCatalog: modelCatalog || null,
           });
         }).catch((err) => console.warn('REST init fallback error:', err));
       })
@@ -376,6 +382,45 @@ export const useStore = create<State>((set, get) => ({
       }
     } catch (e) {
       console.error('Error sending agent instruction:', e);
+    }
+  },
+
+  updateAgentModel: async (agentId: string, provider: string, model: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/agents/${agentId}/model`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        set((state) => {
+          const existing = state.agents[agentId];
+          if (!existing) return state;
+          return {
+            agents: {
+              ...state.agents,
+              [agentId]: { ...existing, provider: data.provider, model: data.model },
+            },
+          };
+        });
+      }
+    } catch (e) {
+      console.error('Error updating agent model:', e);
+    }
+  },
+
+  setGlobalDefaultModel: async (provider: string, model: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/config/models/default`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model }),
+      });
+      const data = await res.json();
+      set({ modelCatalog: data });
+    } catch (e) {
+      console.error('Error updating global default model:', e);
     }
   },
 

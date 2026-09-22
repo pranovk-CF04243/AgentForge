@@ -1,0 +1,38 @@
+{
+  "default": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  },
+  "available_models": [
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "label": "Gemini 2.5 Flash"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-pro",
+      "label": "Gemini 2.5 Pro"
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3.1",
+      "label": "Llama 3.1 (Ollama)"
+    },
+    {
+      "provider": "ollama",
+      "model": "qwen2.5-coder",
+      "label": "Qwen 2.5 Coder (Ollama)"
+    },
+    {
+      "provider": "nvidia",
+      "model": "meta/llama-3.1-70b-instruct",
+      "label": "Llama 3.1 70B (NVIDIA NIM)"
+    },
+    {
+      "provider": "nvidia",
+      "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+      "label": "Nemotron 70B (NVIDIA NIM)"
+    }
+  ]
+}

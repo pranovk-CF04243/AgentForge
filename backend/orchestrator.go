@@ -15,29 +15,34 @@ import (
 )
 
 type Orchestrator struct {
-	mu           sync.RWMutex
-	hub          *Hub
-	db           *gorm.DB
-	agents       map[string]*Agent
-	projects     map[string]*Project
-	tasks        map[string]*Task
-	incidents    map[string]*Incident
-	approvals    map[string]*HumanApproval
-	events       []SystemEvent
-	metrics      APMMetrics
-	activeTicker *time.Ticker
+	mu             sync.RWMutex
+	hub            *Hub
+	db             *gorm.DB
+	agents         map[string]*Agent
+	projects       map[string]*Project
+	tasks          map[string]*Task
+	incidents      map[string]*Incident
+	approvals      map[string]*HumanApproval
+	events         []SystemEvent
+	metrics        APMMetrics
+	activeTicker   *time.Ticker
+	budgetConfig   *BudgetConfig
+	crisisPool     int64
+	taskAllotments map[string]int64 // taskID -> total token budget granted for that run
+	modelCatalog   *ModelCatalog
 }
 
 func NewOrchestrator(hub *Hub, db *gorm.DB) *Orchestrator {
 	o := &Orchestrator{
-		hub:       hub,
-		db:        db,
-		agents:    make(map[string]*Agent),
-		projects:  make(map[string]*Project),
-		tasks:     make(map[string]*Task),
-		incidents: make(map[string]*Incident),
-		approvals: make(map[string]*HumanApproval),
-		events:    make([]SystemEvent, 0),
+		hub:            hub,
+		db:             db,
+		agents:         make(map[string]*Agent),
+		projects:       make(map[string]*Project),
+		tasks:          make(map[string]*Task),
+		incidents:      make(map[string]*Incident),
+		approvals:      make(map[string]*HumanApproval),
+		events:         make([]SystemEvent, 0),
+		taskAllotments: make(map[string]int64),
 		metrics: APMMetrics{
 			ActiveAgents:    14,
 			RunningTasks:    0,
@@ -46,8 +51,87 @@ func NewOrchestrator(hub *Hub, db *gorm.DB) *Orchestrator {
 		},
 	}
 
+	budgetConfigPath := os.Getenv("TOKEN_BUDGET_CONFIG_PATH")
+	if budgetConfigPath == "" {
+		budgetConfigPath = "config/token_budgets.json"
+	}
+	o.budgetConfig = LoadBudgetConfig(budgetConfigPath)
+
+	modelCatalogPath := os.Getenv("MODEL_CATALOG_CONFIG_PATH")
+	if modelCatalogPath == "" {
+		modelCatalogPath = "config/model_catalog.json"
+	}
+	o.modelCatalog = LoadModelCatalog(modelCatalogPath)
+
 	o.initializeData()
+	o.loadOrSeedCrisisPool()
 	return o
+}
+
+// EffectiveModelFor returns the agent's own provider/model override if one
+// is set, otherwise the global default from the model catalog. Callers
+// should already hold o.mu (or otherwise ensure a consistent read) when
+// reading agent fields, matching the discipline used elsewhere for other
+// agent-derived dispatch values (e.g. the token budget allotment).
+func (o *Orchestrator) EffectiveModelFor(agent *Agent) ModelRef {
+	if agent.Provider != "" && agent.Model != "" {
+		return ModelRef{Provider: agent.Provider, Model: agent.Model}
+	}
+	return o.modelCatalog.GetDefault()
+}
+
+// SetAgentModelOverride sets (or, if both provider and model are empty,
+// clears) an agent's per-agent model override, persists it, and broadcasts
+// the update over the hub.
+func (o *Orchestrator) SetAgentModelOverride(agentID, provider, model string) (*Agent, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	agent, ok := o.agents[agentID]
+	if !ok {
+		return nil, fmt.Errorf("agent '%s' not found", agentID)
+	}
+	agent.Provider = provider
+	agent.Model = model
+	o.safeSave(agent)
+	o.broadcastAgentUpdate(agent)
+	return agent, nil
+}
+
+// SetGlobalDefaultModel updates the global default (provider, model) used
+// by any agent without its own override, and persists it to the model
+// catalog's JSON config file on disk.
+func (o *Orchestrator) SetGlobalDefaultModel(provider, model string) error {
+	if provider == "" || model == "" {
+		return fmt.Errorf("provider and model are both required")
+	}
+	return o.modelCatalog.SetDefault(ModelRef{Provider: provider, Model: model})
+}
+
+// loadOrSeedCrisisPool restores the shared crisis pool's token count from
+// Postgres if a row already exists (so a restart doesn't reset a pool that
+// has already been drawn down), otherwise seeds it from the JSON config's
+// crisis_pool.initial_tokens and persists that as the starting row.
+func (o *Orchestrator) loadOrSeedCrisisPool() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if o.db != nil {
+		var pool BudgetPool
+		if err := o.db.First(&pool, "id = ?", "global").Error; err == nil {
+			o.crisisPool = pool.Tokens
+			return
+		}
+	}
+
+	o.crisisPool = o.budgetConfig.CrisisPool.InitialTokens
+	o.safeCreate(&BudgetPool{ID: "global", Tokens: o.crisisPool})
+}
+
+// persistCrisisPool saves the current shared crisis pool size. Callers must
+// hold o.mu.
+func (o *Orchestrator) persistCrisisPool() {
+	o.safeSave(&BudgetPool{ID: "global", Tokens: o.crisisPool})
 }
 
 func (o *Orchestrator) initializeData() {
@@ -366,8 +450,10 @@ func (o *Orchestrator) updateRealMetrics() {
 	var totalTokens int64
 	var totalCost float64
 
-	o.db.Model(&Task{}).Where("status = ?", TaskRunning).Count(&runningTasks)
-	o.db.Model(&Task{}).Where("status = ? OR status = ?", TaskBlocked, TaskWaitingApproval).Count(&blockedTasks)
+	if o.db != nil {
+		o.db.Model(&Task{}).Where("status = ?", TaskRunning).Count(&runningTasks)
+		o.db.Model(&Task{}).Where("status = ? OR status = ?", TaskBlocked, TaskWaitingApproval).Count(&blockedTasks)
+	}
 
 	// Calculate accumulated tokens and cost across all agents
 	for _, ag := range o.agents {
@@ -398,9 +484,12 @@ func (o *Orchestrator) DecomposeRequirement(projectID, prompt string) ([]*Task, 
 		pythonURL = "http://agent-runtime:8000"
 	}
 
+	defaultModel := o.modelCatalog.GetDefault()
 	reqPayload := map[string]string{
 		"project_id": projectID,
 		"prompt":     prompt,
+		"provider":   defaultModel.Provider,
+		"model":      defaultModel.Model,
 	}
 	body, _ := json.Marshal(reqPayload)
 
@@ -639,6 +728,19 @@ func (o *Orchestrator) dispatchTaskToRuntime(task *Task, agent *Agent) {
 		pythonURL = "http://agent-runtime:8000"
 	}
 
+	// Compute this task's total token allotment: the agent's configured
+	// per-role base budget plus any surplus it banked from a previous task
+	// that finished under budget. The banked surplus is consumed here (reset
+	// to 0) since it's being folded into this task's allotment.
+	o.mu.Lock()
+	base := o.budgetConfig.BudgetFor(agent.Role).TokenBudget
+	allotted := base + agent.BankedSurplus
+	agent.BankedSurplus = 0
+	o.taskAllotments[task.ID] = allotted
+	effModel := o.EffectiveModelFor(agent)
+	o.safeSave(agent)
+	o.mu.Unlock()
+
 	payload := map[string]interface{}{
 		"task_id":       task.ID,
 		"project_id":    task.ProjectID,
@@ -651,6 +753,9 @@ func (o *Orchestrator) dispatchTaskToRuntime(task *Task, agent *Agent) {
 		"skills":        agent.Skills,
 		"tools":         agent.Tools,
 		"dependencies":  task.Dependencies,
+		"token_budget":  allotted,
+		"provider":      effModel.Provider,
+		"model":         effModel.Model,
 	}
 
 	body, err := json.Marshal(payload)
@@ -738,6 +843,17 @@ func (o *Orchestrator) HandleTaskEvent(event TaskEventPayload) {
 			}
 		}
 
+		// Bank any unused portion of this task's token allotment onto the
+		// agent, to be added on top of its base budget for its next task.
+		if allotted, ok := o.taskAllotments[task.ID]; ok {
+			if agent != nil {
+				if saved := allotted - task.TokenUsage; saved > 0 {
+					agent.BankedSurplus += saved
+				}
+			}
+			delete(o.taskAllotments, task.ID)
+		}
+
 		o.safeSave(task)
 		o.broadcastTaskUpdate(task)
 
@@ -756,6 +872,7 @@ func (o *Orchestrator) HandleTaskEvent(event TaskEventPayload) {
 					ag.State = StateIdle
 					ag.CurrentTaskID = nil
 					ag.ActiveAction = "At desk"
+					o.settleAgentIdleLocked(ag)
 					o.safeSave(ag)
 					o.broadcastAgentUpdate(ag)
 					o.drainTaskQueue()
@@ -771,6 +888,7 @@ func (o *Orchestrator) HandleTaskEvent(event TaskEventPayload) {
 		task.Status = TaskFailed
 		task.ErrorDetails = string(event.Content)
 		task.Logs = append(task.Logs, fmt.Sprintf("[%s] ERROR: %s", time.Now().Format("15:04:05"), event.Content))
+		delete(o.taskAllotments, task.ID)
 		o.safeSave(task)
 		o.broadcastTaskUpdate(task)
 
@@ -778,11 +896,77 @@ func (o *Orchestrator) HandleTaskEvent(event TaskEventPayload) {
 			agent.CurrentTaskID = nil
 			agent.State = StateIdle
 			agent.ActiveAction = fmt.Sprintf("Standing by (previous task ended: %s)", event.Content)
+			o.settleAgentIdleLocked(agent)
 			o.safeSave(agent)
 			o.broadcastAgentUpdate(agent)
 			o.drainTaskQueue()
 		}
 	}
+}
+
+// settleAgentIdleLocked spills an agent's currently banked token surplus
+// into the shared crisis pool now that it has gone idle with no next task
+// immediately assigned, resetting its own banked surplus to 0. Callers must
+// already hold o.mu.
+func (o *Orchestrator) settleAgentIdleLocked(ag *Agent) {
+	if ag.BankedSurplus <= 0 {
+		return
+	}
+	spilled := ag.BankedSurplus
+	o.crisisPool += spilled
+	ag.BankedSurplus = 0
+	o.persistCrisisPool()
+	o.recordEvent("agent.budget.surplus_spilled", ag.Name,
+		fmt.Sprintf("Idle with %d unused tokens banked; spilled into shared crisis pool (pool now: %d)", spilled, o.crisisPool))
+}
+
+// RequestBudgetTopup is called (via the /api/internal/request-budget-topup
+// handler) when an agent's own token allotment for a task has been
+// exhausted mid-execution. It grants a capped top-up from the shared crisis
+// pool, honoring both the flat per-task cap and the percentage-of-pool cap
+// from the budget config, and returns the amount actually granted (may be
+// less than requested, including 0 if the pool can't cover any of it).
+func (o *Orchestrator) RequestBudgetTopup(taskID, agentID string, requested int64) int64 {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if requested <= 0 || o.crisisPool <= 0 {
+		return 0
+	}
+
+	cfg := o.budgetConfig.CrisisPool
+	drawCap := cfg.MaxDrawPerTask
+	pctCap := o.crisisPool * cfg.MaxDrawPctOfPool / 100
+	if pctCap < drawCap {
+		drawCap = pctCap
+	}
+	if drawCap < 0 {
+		drawCap = 0
+	}
+
+	granted := requested
+	if granted > drawCap {
+		granted = drawCap
+	}
+	if granted > o.crisisPool {
+		granted = o.crisisPool
+	}
+	if granted < 0 {
+		granted = 0
+	}
+
+	if granted > 0 {
+		o.crisisPool -= granted
+		o.persistCrisisPool()
+		agentName := agentID
+		if ag, ok := o.agents[agentID]; ok {
+			agentName = ag.Name
+		}
+		o.recordEvent("agent.budget.crisis_draw", agentName,
+			fmt.Sprintf("Drew %d tokens from shared crisis pool for task %s (pool remaining: %d)", granted, taskID, o.crisisPool))
+	}
+
+	return granted
 }
 
 func (o *Orchestrator) triggerNextTasks(completedTaskID string) {
@@ -906,6 +1090,7 @@ func (o *Orchestrator) InstructAgent(agentID, instruction string) (string, error
 
 	agent.State = StateThinking
 	agent.ActiveAction = fmt.Sprintf("Executing instruction: %s", instruction)
+	effModel := o.EffectiveModelFor(agent)
 	o.safeSave(agent)
 	o.broadcastAgentUpdate(agent)
 	o.mu.Unlock()
@@ -923,6 +1108,8 @@ func (o *Orchestrator) InstructAgent(agentID, instruction string) (string, error
 		"role":          agent.Role,
 		"system_prompt": agent.SystemPrompt,
 		"instruction":   instruction,
+		"provider":      effModel.Provider,
+		"model":         effModel.Model,
 	}
 	body, _ := json.Marshal(payload)
 

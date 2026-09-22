@@ -18,6 +18,8 @@ export const AgentInspector: React.FC = () => {
   const agents = useStore((state) => state.agents);
   const tasks = useStore((state) => state.tasks);
   const sendAgentInstruction = useStore((state) => state.sendAgentInstruction);
+  const modelCatalog = useStore((state) => state.modelCatalog);
+  const updateAgentModel = useStore((state) => state.updateAgentModel);
 
   const [inputInstruction, setInputInstruction] = useState('');
 
@@ -33,6 +35,19 @@ export const AgentInspector: React.FC = () => {
     if (!inputInstruction.trim()) return;
     sendAgentInstruction(agent.id, inputInstruction);
     setInputInstruction('');
+  };
+
+  // "" = use global default; otherwise "provider:model" identifies the override
+  const currentModelKey = agent.provider && agent.model ? `${agent.provider}:${agent.model}` : '';
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      updateAgentModel(agent.id, '', '');
+      return;
+    }
+    const [provider, model] = val.split(':');
+    updateAgentModel(agent.id, provider, model);
   };
 
   return (
@@ -51,7 +66,25 @@ export const AgentInspector: React.FC = () => {
             <span>•</span>
             <span className="flex items-center gap-1 text-purple-600 dark:text-purple-300 font-medium">
               <Cpu className="w-3 h-3" />
-              {agent.model}
+              {modelCatalog ? (
+                <select
+                  value={currentModelKey}
+                  onChange={handleModelChange}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-transparent border border-purple-200 dark:border-purple-800/60 rounded px-1 py-0.5 text-purple-600 dark:text-purple-300 text-[11px] font-medium focus:outline-none cursor-pointer"
+                >
+                  <option value="">
+                    Default ({modelCatalog.default.provider}/{modelCatalog.default.model})
+                  </option>
+                  {modelCatalog.available_models.map((m) => (
+                    <option key={`${m.provider}:${m.model}`} value={`${m.provider}:${m.model}`}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>{agent.model || 'default'}</span>
+              )}
             </span>
           </div>
         </div>
